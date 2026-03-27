@@ -1,1 +1,5 @@
-<Solution />
+<Solution>
+  <Project Path="QuestAlarm.console/QuestAlarm.console.csproj" />
+  <Project Path="QuestAlarm.core/QuestAlarm.core.csproj" />
+  <Project Path="QuestAlarm.infrastructure/QuestAlarm.infrastructure.csproj" />
+</Solution>

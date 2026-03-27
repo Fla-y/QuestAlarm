@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\QuestAlarm.core\QuestAlarm.core.csproj" />
+    <ProjectReference Include="..\QuestAlarm.infrastructure\QuestAlarm.infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Composition\" />
+    <Folder Include="Helpers\" />
+  </ItemGroup>
+
+</Project>
