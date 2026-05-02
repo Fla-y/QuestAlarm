@@ -1,0 +1,141 @@
+@inject DesktopSettingsService SettingsService
+
+<div class="topbar">
+    <div>
+        <p class="eyebrow">Configuration</p>
+        <h2>Settings</h2>
+    </div>
+    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+</div>
+
+@if (_settings is null)
+{
+    <div class="status-panel">Loading settings...</div>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-heading">
+            <h3>App Settings</h3>
+            <span>@_settings.SettingsFilePath</span>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_statusMessage))
+        {
+            <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
+        }
+
+        <div class="form-grid">
+            <label class="wide-field">
+                <span>Storage Root</span>
+                <input @bind="_storageRoot" />
+            </label>
+            <label class="wide-field">
+                <span>Challenge Executable</span>
+                <input @bind="_challengeExecutablePath" />
+            </label>
+            <label class="wide-field">
+                <span>Challenge Working Directory</span>
+                <input @bind="_challengeWorkingDirectory" />
+            </label>
+            <label>
+                <span>Callback URL</span>
+                <input @bind="_callbackUrl" />
+            </label>
+            <label>
+                <span>Show Test Alarm Option</span>
+                <select @bind="_showTestAlarmMenuOption">
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                </select>
+            </label>
+            <label class="wide-field">
+                <span>Arguments Template</span>
+                <input @bind="_argumentsTemplate" />
+            </label>
+        </div>
+
+        <div class="form-actions">
+            <button class="toggle-button" type="button" @onclick="SaveAsync" disabled="@(!CanSave())">Save</button>
+        </div>
+    </section>
+}
+
+@code {
+    private DesktopSettingsModel? _settings;
+    private string _storageRoot = string.Empty;
+    private string _challengeExecutablePath = string.Empty;
+    private string _challengeWorkingDirectory = string.Empty;
+    private string _callbackUrl = string.Empty;
+    private string _argumentsTemplate = string.Empty;
+    private bool _showTestAlarmMenuOption;
+    private string? _statusMessage;
+    private bool _statusIsError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _settings = await SettingsService.LoadAsync();
+        _storageRoot = _settings.Storage.RootDirectory;
+        _showTestAlarmMenuOption = _settings.Development.ShowTestAlarmMenuOption;
+        _challengeExecutablePath = _settings.ChallengeClient.ExecutablePath;
+        _challengeWorkingDirectory = _settings.ChallengeClient.WorkingDirectory;
+        _callbackUrl = _settings.ChallengeClient.CallbackUrl;
+        _argumentsTemplate = _settings.ChallengeClient.ArgumentsTemplate;
+        ClearStatus();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_settings is null)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(_callbackUrl, UriKind.Absolute, out _))
+        {
+            SetStatus("Callback URL is not valid.", isError: true);
+            return;
+        }
+
+        var updatedSettings = _settings with
+        {
+            Storage = new StorageSettings(_storageRoot.Trim()),
+            Development = new DevelopmentSettings(_showTestAlarmMenuOption),
+            ChallengeClient = new QuestAlarm.Infrastructure.ChallengeClient.ChallengeClientOptions
+            {
+                ExecutablePath = _challengeExecutablePath.Trim(),
+                WorkingDirectory = _challengeWorkingDirectory.Trim(),
+                CallbackUrl = _callbackUrl.Trim(),
+                ArgumentsTemplate = _argumentsTemplate.Trim()
+            }
+        };
+
+        await SettingsService.SaveAsync(updatedSettings);
+        _settings = updatedSettings;
+        SetStatus("Settings saved. Restart QuestAlarm to apply service configuration changes.", isError: false);
+    }
+
+    private bool CanSave()
+    {
+        return !string.IsNullOrWhiteSpace(_storageRoot) &&
+            !string.IsNullOrWhiteSpace(_callbackUrl) &&
+            !string.IsNullOrWhiteSpace(_argumentsTemplate);
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private void ClearStatus()
+    {
+        _statusMessage = null;
+        _statusIsError = false;
+    }
+}

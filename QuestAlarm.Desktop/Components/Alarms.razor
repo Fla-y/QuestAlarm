@@ -1,0 +1,348 @@
+@inject IAlarmAppService AlarmAppService
+
+<div class="topbar">
+    <div>
+        <p class="eyebrow">Offline First</p>
+        <h2>Alarms</h2>
+    </div>
+    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+</div>
+
+<section class="panel">
+    <div class="panel-heading">
+        <h3>@(_editingAlarmId is null ? "Create Alarm" : "Edit Alarm")</h3>
+        @if (_editingAlarmId is not null)
+        {
+            <button class="refresh-button" type="button" @onclick="CancelEdit">Cancel Edit</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_formError))
+    {
+        <p class="form-error">@_formError</p>
+    }
+@if (!string.IsNullOrWhiteSpace(_statusMessage))
+{
+    <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
+}
+
+    <div class="form-grid">
+        <label>
+            <span>Title</span>
+            <input @bind="_form.Title" />
+        </label>
+        <label>
+            <span>Time (HH:mm)</span>
+            <input @bind="_form.Time" placeholder="07:30" />
+        </label>
+        <label>
+            <span>Type</span>
+            <select @bind="_form.IsRecurring" disabled="@(_editingAlarmId is not null)">
+                <option value="false">One-time</option>
+                <option value="true">Recurring</option>
+            </select>
+        </label>
+        @if (_form.IsRecurring)
+        {
+            <div class="form-field wide-field">
+                <span>Recurring Days</span>
+                <div class="day-picker" role="group" aria-label="Recurring days">
+                    @foreach (var day in WeekDays)
+                    {
+                        <label class="day-chip">
+                            <input type="checkbox"
+                                   checked="@_selectedRecurringDays.Contains(day)"
+                                   @onchange="eventArgs => ToggleRecurringDay(day, eventArgs)" />
+                            <span>@ShortDay(day)</span>
+                        </label>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <label>
+                <span>Date (yyyy-MM-dd)</span>
+                <input @bind="_form.StartDate" placeholder="2026-05-01" />
+            </label>
+        }
+    </div>
+
+    <div class="form-actions">
+    <button class="toggle-button" type="button" @onclick="SubmitAsync" disabled="@(!CanSubmit())">
+            @(_editingAlarmId is null ? "Create" : "Save")
+        </button>
+    </div>
+</section>
+
+@if (_alarms is null)
+{
+    <div class="status-panel">Loading alarms...</div>
+}
+else if (_alarms.Count == 0)
+{
+    <div class="status-panel">No alarms found.</div>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-heading">
+            <h3>Configured Alarms</h3>
+            <span>@_alarms.Count</span>
+        </div>
+
+        <div class="list">
+            @foreach (var alarm in _alarms)
+            {
+                <div class="list-row">
+                    <div>
+                        <strong>@alarm.Title</strong>
+                        <span>@FormatSchedule(alarm)</span>
+                    </div>
+                    <div class="alarm-actions">
+                        <em>@alarm.State</em>
+                        <button class="toggle-button" type="button" @onclick="() => BeginEdit(alarm)">Edit</button>
+                        <button class="toggle-button" type="button" @onclick="() => ToggleAsync(alarm.Id)">
+                            @(alarm.IsEnabled ? "Disable" : "Enable")
+                        </button>
+                        @if (_pendingDeleteAlarmId == alarm.Id)
+                        {
+                            <button class="toggle-button danger-button" type="button" @onclick="() => ConfirmDeleteAsync(alarm.Id)">Confirm Delete</button>
+                            <button class="toggle-button" type="button" @onclick="CancelDelete">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="toggle-button danger-button" type="button" @onclick="() => RequestDelete(alarm.Id)">Delete</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<Core.Entities.Alarm>? _alarms;
+    private Guid? _editingAlarmId;
+    private Guid? _pendingDeleteAlarmId;
+    private string? _formError;
+    private string? _statusMessage;
+    private bool _statusIsError;
+    private readonly HashSet<DayOfWeek> _selectedRecurringDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday];
+    private AlarmFormModel _form = NewDefaultOneTimeForm();
+
+    private static readonly DayOfWeek[] WeekDays =
+    [
+        DayOfWeek.Monday,
+        DayOfWeek.Tuesday,
+        DayOfWeek.Wednesday,
+        DayOfWeek.Thursday,
+        DayOfWeek.Friday,
+        DayOfWeek.Saturday,
+        DayOfWeek.Sunday
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _alarms = await AlarmAppService.GetAlarmsAsync();
+    }
+
+    private async Task ToggleAsync(Guid alarmId)
+    {
+        ClearStatus();
+        var alarm = await AlarmAppService.ToggleEnabledAsync(alarmId);
+        if (alarm is null)
+        {
+            SetStatus("Alarm not found.", isError: true);
+        }
+        else
+        {
+            SetStatus($"Alarm '{alarm.Title}' {(alarm.IsEnabled ? "enabled" : "disabled")}.", isError: false);
+        }
+        await LoadAsync();
+    }
+
+    private void BeginEdit(Core.Entities.Alarm alarm)
+    {
+        _editingAlarmId = alarm.Id;
+        _pendingDeleteAlarmId = null;
+        _formError = null;
+        ClearStatus();
+        _form = new AlarmFormModel(
+            alarm.Title,
+            alarm.Schedule.Time.ToString("HH:mm"),
+            alarm.Schedule.IsRecurring,
+            alarm.Schedule.StartDate?.ToString("yyyy-MM-dd"),
+            alarm.Schedule.IsRecurring ? string.Join(",", alarm.Schedule.RecurringDays) : null);
+
+        _selectedRecurringDays.Clear();
+        foreach (var day in alarm.Schedule.RecurringDays)
+        {
+            _selectedRecurringDays.Add(day);
+        }
+    }
+
+    private void CancelEdit()
+    {
+        _editingAlarmId = null;
+        _formError = null;
+        _pendingDeleteAlarmId = null;
+        _form = NewDefaultOneTimeForm();
+        ResetDefaultRecurringDays();
+    }
+
+    private async Task SubmitAsync()
+    {
+        _formError = null;
+        ClearStatus();
+        var submission = BuildSubmissionModel();
+
+        if (_editingAlarmId is null)
+        {
+            var (alarm, error) = await AlarmAppService.CreateAsync(submission);
+            if (error is not null)
+            {
+                _formError = error;
+                return;
+            }
+
+            SetStatus($"Alarm '{alarm!.Title}' created.", isError: false);
+        }
+        else
+        {
+            var (alarm, error) = await AlarmAppService.UpdateAsync(_editingAlarmId.Value, submission);
+            if (error is not null)
+            {
+                _formError = error;
+                return;
+            }
+
+            SetStatus($"Alarm '{alarm!.Title}' updated.", isError: false);
+        }
+
+        CancelEdit();
+        await LoadAsync();
+    }
+
+    private void RequestDelete(Guid alarmId)
+    {
+        _pendingDeleteAlarmId = alarmId;
+        _formError = null;
+        ClearStatus();
+    }
+
+    private void CancelDelete()
+    {
+        _pendingDeleteAlarmId = null;
+    }
+
+    private async Task ConfirmDeleteAsync(Guid alarmId)
+    {
+        ClearStatus();
+        var wasDeleted = await AlarmAppService.DeleteAsync(alarmId);
+        if (!wasDeleted)
+        {
+            SetStatus("Alarm not found.", isError: true);
+            return;
+        }
+
+        if (_editingAlarmId == alarmId)
+        {
+            CancelEdit();
+        }
+
+        _pendingDeleteAlarmId = null;
+        SetStatus("Alarm deleted.", isError: false);
+        await LoadAsync();
+    }
+
+    private bool CanSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(_form.Title) || string.IsNullOrWhiteSpace(_form.Time))
+        {
+            return false;
+        }
+
+        return _form.IsRecurring
+            ? _selectedRecurringDays.Count > 0
+            : !string.IsNullOrWhiteSpace(_form.StartDate);
+    }
+
+    private void ToggleRecurringDay(DayOfWeek day, ChangeEventArgs eventArgs)
+    {
+        if (eventArgs.Value is bool isSelected && isSelected)
+        {
+            _selectedRecurringDays.Add(day);
+            return;
+        }
+
+        _selectedRecurringDays.Remove(day);
+    }
+
+    private AlarmFormModel BuildSubmissionModel()
+    {
+        if (!_form.IsRecurring)
+        {
+            return _form with { RecurringDaysCsv = null };
+        }
+
+        var recurringDaysCsv = string.Join(",", WeekDays.Where(_selectedRecurringDays.Contains));
+        return _form with { StartDate = null, RecurringDaysCsv = recurringDaysCsv };
+    }
+
+    private void ResetDefaultRecurringDays()
+    {
+        _selectedRecurringDays.Clear();
+        _selectedRecurringDays.Add(DayOfWeek.Monday);
+        _selectedRecurringDays.Add(DayOfWeek.Tuesday);
+        _selectedRecurringDays.Add(DayOfWeek.Wednesday);
+        _selectedRecurringDays.Add(DayOfWeek.Thursday);
+        _selectedRecurringDays.Add(DayOfWeek.Friday);
+    }
+
+    private static string FormatSchedule(Core.Entities.Alarm alarm)
+    {
+        if (alarm.Schedule.IsRecurring)
+        {
+            var days = alarm.Schedule.RecurringDays.Count == 0
+                ? "No days"
+                : string.Join(", ", alarm.Schedule.RecurringDays);
+            return $"{days} at {alarm.Schedule.Time:HH\\:mm}";
+        }
+
+        var date = alarm.Schedule.StartDate?.ToString("yyyy-MM-dd") ?? "-";
+        return $"{date} at {alarm.Schedule.Time:HH\\:mm}";
+    }
+
+    private static AlarmFormModel NewDefaultOneTimeForm()
+    {
+        return new AlarmFormModel(
+            Title: string.Empty,
+            Time: "07:30",
+            IsRecurring: false,
+            StartDate: DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd"),
+            RecurringDaysCsv: "Mon,Tue,Wed,Thu,Fri");
+    }
+
+    private static string ShortDay(DayOfWeek day)
+    {
+        return day.ToString()[..3];
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private void ClearStatus()
+    {
+        _statusMessage = null;
+        _statusIsError = false;
+    }
+}

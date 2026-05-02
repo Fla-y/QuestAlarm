@@ -1,5 +1,8 @@
 <Solution>
-  <Project Path="QuestAlarm.console/QuestAlarm.console.csproj" />
-  <Project Path="QuestAlarm.core/QuestAlarm.core.csproj" />
-  <Project Path="QuestAlarm.infrastructure/QuestAlarm.infrastructure.csproj" />
+  <Project Path="QuestAlarm.Api/QuestAlarm.Api.csproj" DisplayName="QuestAlarm.Api" />
+  <Project Path="QuestAlarm.Desktop/QuestAlarm.Desktop.csproj" DisplayName="QuestAlarm.Desktop" />
+  <Project Path="QuestAlarm.FakeChallengeClient/QuestAlarm.FakeChallengeClient.csproj" DisplayName="QuestAlarm.FakeChallengeClient" />
+  <Project Path="QuestAlarm.console/QuestAlarm.Console.csproj" DisplayName="QuestAlarm.Console" />
+  <Project Path="QuestAlarm.core/QuestAlarm.Core.csproj" DisplayName="QuestAlarm.Core" />
+  <Project Path="QuestAlarm.infrastructure/QuestAlarm.Infrastructure.csproj" DisplayName="QuestAlarm.Infrastructure" />
 </Solution>

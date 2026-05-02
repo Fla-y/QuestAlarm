@@ -1,0 +1,16 @@
+<div class="topbar">
+    <div>
+        <p class="eyebrow">Work In Progress</p>
+        <h2>@Title</h2>
+    </div>
+</div>
+
+<div class="status-panel">@Description</div>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string Description { get; set; } = string.Empty;
+}

@@ -1,0 +1,114 @@
+@inject SessionListService SessionList
+
+<div class="topbar">
+    <div>
+        <p class="eyebrow">Challenge History</p>
+        <h2>Sessions</h2>
+    </div>
+    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+</div>
+
+@if (_sessions is null)
+{
+    <div class="status-panel">Loading sessions...</div>
+}
+else if (_sessions.Count == 0)
+{
+    <div class="status-panel">No sessions found.</div>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-heading">
+            <h3>Recent Sessions</h3>
+            <span>@_sessions.Count</span>
+        </div>
+
+        <div class="session-table" role="table" aria-label="Recent sessions">
+            <div class="session-row session-header" role="row">
+                <span role="columnheader">Alarm</span>
+                <span role="columnheader">State</span>
+                <span role="columnheader">Triggered</span>
+                <span role="columnheader">Completed</span>
+                <span role="columnheader">Session</span>
+            </div>
+
+            @foreach (var item in _sessions)
+            {
+                <div class="session-row" role="row">
+                    <div role="cell">
+                        <strong>@item.AlarmTitle</strong>
+                        <span>@FormatSchedule(item.Alarm)</span>
+                    </div>
+                    <div role="cell">
+                        <span class="@GetStateBadgeClass(item.Session.State)">@item.Session.State</span>
+                    </div>
+                    <span role="cell">@FormatLocalDateTime(item.Session.TriggeredAtUtc)</span>
+                    <span role="cell">@FormatCompletedAt(item.Session.CompletedAtUtc)</span>
+                    <code role="cell">@ShortId(item.Session.Id)</code>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private IReadOnlyList<SessionListItem>? _sessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _sessions = await SessionList.GetRecentSessionsAsync();
+    }
+
+    private static string FormatSchedule(Core.Entities.Alarm? alarm)
+    {
+        if (alarm is null)
+        {
+            return "-";
+        }
+
+        if (alarm.Schedule.IsRecurring)
+        {
+            var days = alarm.Schedule.RecurringDays.Count == 0
+                ? "No days"
+                : string.Join(", ", alarm.Schedule.RecurringDays);
+
+            return $"{days} at {alarm.Schedule.Time:HH\\:mm}";
+        }
+
+        var date = alarm.Schedule.StartDate?.ToString("yyyy-MM-dd") ?? "-";
+        return $"{date} at {alarm.Schedule.Time:HH\\:mm}";
+    }
+
+    private static string FormatLocalDateTime(DateTime utcDateTime)
+    {
+        return utcDateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    }
+
+    private static string FormatCompletedAt(DateTime? completedAtUtc)
+    {
+        return completedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "-";
+    }
+
+    private static string ShortId(Guid id)
+    {
+        return id.ToString("N")[..8];
+    }
+
+    private static string GetStateBadgeClass(Core.Enums.AlarmState state)
+    {
+        return state switch
+        {
+            Core.Enums.AlarmState.Completed => "state-badge completed",
+            Core.Enums.AlarmState.Failed => "state-badge failed",
+            Core.Enums.AlarmState.ChallengeRunning => "state-badge running",
+            Core.Enums.AlarmState.Triggering => "state-badge running",
+            _ => "state-badge"
+        };
+    }
+}

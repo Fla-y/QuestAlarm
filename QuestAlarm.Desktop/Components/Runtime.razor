@@ -1,0 +1,114 @@
+@inject DesktopRuntimeService RuntimeService
+
+<div class="topbar">
+    <div>
+        <p class="eyebrow">Host Runtime</p>
+        <h2>Runtime</h2>
+    </div>
+    <button class="refresh-button" type="button" @onclick="Refresh">Refresh</button>
+</div>
+
+<section class="panel">
+    <div class="panel-heading">
+        <h3>Desktop Host</h3>
+        <span>@(RuntimeService.IsRunning ? "Running" : "Stopped")</span>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
+    }
+
+    <div class="runtime-grid">
+        <div>
+            <span>Callback API</span>
+            <strong>@RuntimeService.CallbackUrl</strong>
+        </div>
+        <div>
+            <span>Started</span>
+            <strong>@(RuntimeService.StartedAtLocal?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-")</strong>
+        </div>
+        <div>
+            <span>Last Event</span>
+            <strong>@(RuntimeService.LastEvent ?? "-")</strong>
+        </div>
+        <div>
+            <span>Last Error</span>
+            <strong>@(RuntimeService.LastError ?? "-")</strong>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        @if (RuntimeService.IsRunning)
+        {
+            <button class="toggle-button danger-button" type="button" @onclick="StopAsync" disabled="@_isBusy">Stop</button>
+        }
+        else
+        {
+            <button class="toggle-button" type="button" @onclick="StartAsync" disabled="@_isBusy">Start</button>
+        }
+    </div>
+</section>
+
+@code {
+    private bool _isBusy;
+    private string? _statusMessage;
+    private bool _statusIsError;
+
+    private async Task StartAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            await RuntimeService.StartAsync();
+            SetStatus("Runtime started.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task StopAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            await RuntimeService.StopAsync();
+            SetStatus("Runtime stopped.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void Refresh()
+    {
+        StateHasChanged();
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private void ClearStatus()
+    {
+        _statusMessage = null;
+        _statusIsError = false;
+    }
+}

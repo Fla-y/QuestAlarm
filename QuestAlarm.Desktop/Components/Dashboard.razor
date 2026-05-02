@@ -1,0 +1,134 @@
+@inject DashboardDataService DashboardData
+
+<header class="topbar">
+    <div>
+        <p class="eyebrow">Offline First</p>
+        <h2>Alarm Command Center</h2>
+    </div>
+    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+</header>
+
+@if (_snapshot is null)
+{
+    <div class="status-panel">Loading QuestAlarm data...</div>
+}
+else
+{
+    <section class="metric-grid" aria-label="QuestAlarm summary">
+        <div class="metric">
+            <span>Alarms</span>
+            <strong>@_snapshot.AlarmCount</strong>
+        </div>
+        <div class="metric">
+            <span>Enabled</span>
+            <strong>@_snapshot.EnabledAlarmCount</strong>
+        </div>
+        <div class="metric">
+            <span>Sessions</span>
+            <strong>@_snapshot.SessionCount</strong>
+        </div>
+    </section>
+
+    <section class="split-grid">
+        <article class="panel">
+            <div class="panel-heading">
+                <h3>Next Alarm</h3>
+                <span>@(_snapshot.NextAlarm?.State.ToString() ?? "None")</span>
+            </div>
+
+            @if (_snapshot.NextAlarm is null)
+            {
+                <p class="empty">No enabled alarms found.</p>
+            }
+            else
+            {
+                <div class="alarm-focus">
+                    <strong>@_snapshot.NextAlarm.Title</strong>
+                    <span>@FormatAlarmSchedule(_snapshot.NextAlarm)</span>
+                </div>
+            }
+        </article>
+
+        <article class="panel">
+            <div class="panel-heading">
+                <h3>Storage</h3>
+                <span>Shared</span>
+            </div>
+            <p class="path">@_snapshot.StorageRoot</p>
+        </article>
+    </section>
+
+    <section class="split-grid">
+        <article class="panel">
+            <div class="panel-heading">
+                <h3>Recent Alarms</h3>
+                <span>@_snapshot.RecentAlarms.Count</span>
+            </div>
+            <div class="list">
+                @foreach (var alarm in _snapshot.RecentAlarms)
+                {
+                    <div class="list-row">
+                        <div>
+                            <strong>@alarm.Title</strong>
+                            <span>@FormatAlarmSchedule(alarm)</span>
+                        </div>
+                        <em>@alarm.State</em>
+                    </div>
+                }
+            </div>
+        </article>
+
+        <article class="panel">
+            <div class="panel-heading">
+                <h3>Recent Sessions</h3>
+                <span>@_snapshot.RecentSessions.Count</span>
+            </div>
+            <div class="list">
+                @foreach (var session in _snapshot.RecentSessions)
+                {
+                    <div class="list-row">
+                        <div>
+                            <strong>@session.State</strong>
+                            <span>@session.TriggeredAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        </div>
+                        <em>@ShortId(session.Id)</em>
+                    </div>
+                }
+            </div>
+        </article>
+    </section>
+}
+
+@code {
+    private DashboardSnapshot? _snapshot;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _snapshot = await DashboardData.GetSnapshotAsync();
+    }
+
+    private static string FormatAlarmSchedule(Core.Entities.Alarm alarm)
+    {
+        if (alarm.Schedule.IsRecurring)
+        {
+            var days = alarm.Schedule.RecurringDays.Count == 0
+                ? "No days"
+                : string.Join(", ", alarm.Schedule.RecurringDays);
+
+            return $"{days} at {alarm.Schedule.Time:HH\\:mm}";
+        }
+
+        var date = alarm.Schedule.StartDate?.ToString("yyyy-MM-dd") ?? "-";
+        return $"{date} at {alarm.Schedule.Time:HH\\:mm}";
+    }
+
+    private static string ShortId(Guid id)
+    {
+        return id.ToString("N")[..8];
+    }
+}
