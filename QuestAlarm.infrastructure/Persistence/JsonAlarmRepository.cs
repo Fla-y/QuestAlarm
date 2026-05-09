@@ -35,7 +35,7 @@ public sealed class JsonAlarmRepository : IAlarmRepository
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var alarm = await TryReadAlarmAsync(filePath, cancellationToken);
+            var alarm = await ReadAlarmOrQuarantineAsync(filePath, cancellationToken);
 
             if (alarm is null)
             {
@@ -57,7 +57,7 @@ public sealed class JsonAlarmRepository : IAlarmRepository
             return null;
         }
 
-        return await TryReadAlarmAsync(filePath, cancellationToken);
+        return await ReadAlarmOrQuarantineAsync(filePath, cancellationToken);
     }
 
     public async Task SaveAsync(Alarm alarm, CancellationToken cancellationToken = default)
@@ -89,7 +89,7 @@ public sealed class JsonAlarmRepository : IAlarmRepository
         return Path.Combine(_alarmsDirectoryPath, $"{alarmId}.json");
     }
 
-    private static async Task<Alarm?> TryReadAlarmAsync(string filePath, CancellationToken cancellationToken)
+    private static async Task<Alarm?> ReadAlarmOrQuarantineAsync(string filePath, CancellationToken cancellationToken)
     {
         try
         {
@@ -102,6 +102,7 @@ public sealed class JsonAlarmRepository : IAlarmRepository
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
+            JsonCorruptFileQuarantine.TryQuarantine(filePath, ex);
             return null;
         }
     }

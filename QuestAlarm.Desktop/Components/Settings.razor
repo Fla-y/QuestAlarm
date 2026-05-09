@@ -1,3 +1,4 @@
+@page "/settings"
 @inject DesktopSettingsService SettingsService
 
 <div class="topbar">
@@ -5,7 +6,9 @@
         <p class="eyebrow">Configuration</p>
         <h2>Settings</h2>
     </div>
-    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    <div class="toolbar-actions">
+        <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    </div>
 </div>
 
 @if (_settings is null)
@@ -28,19 +31,26 @@ else
         <div class="form-grid">
             <label class="wide-field">
                 <span>Storage Root</span>
-                <input @bind="_storageRoot" />
+                <input @bind="_storageRoot" @bind:event="oninput" />
             </label>
             <label class="wide-field">
                 <span>Challenge Executable</span>
-                <input @bind="_challengeExecutablePath" />
+                <input @bind="_challengeExecutablePath" @bind:event="oninput" />
             </label>
             <label class="wide-field">
                 <span>Challenge Working Directory</span>
-                <input @bind="_challengeWorkingDirectory" />
+                <input @bind="_challengeWorkingDirectory" @bind:event="oninput" />
+            </label>
+            <label>
+                <span>Runtime Auto Start</span>
+                <select @bind="_runtimeAutoStart">
+                    <option value="true">Enabled</option>
+                    <option value="false">Disabled</option>
+                </select>
             </label>
             <label>
                 <span>Callback URL</span>
-                <input @bind="_callbackUrl" />
+                <input @bind="_callbackUrl" @bind:event="oninput" />
             </label>
             <label>
                 <span>Show Test Alarm Option</span>
@@ -51,7 +61,7 @@ else
             </label>
             <label class="wide-field">
                 <span>Arguments Template</span>
-                <input @bind="_argumentsTemplate" />
+                <input @bind="_argumentsTemplate" @bind:event="oninput" />
             </label>
         </div>
 
@@ -68,6 +78,7 @@ else
     private string _challengeWorkingDirectory = string.Empty;
     private string _callbackUrl = string.Empty;
     private string _argumentsTemplate = string.Empty;
+    private bool _runtimeAutoStart;
     private bool _showTestAlarmMenuOption;
     private string? _statusMessage;
     private bool _statusIsError;
@@ -82,6 +93,7 @@ else
         _settings = await SettingsService.LoadAsync();
         _storageRoot = _settings.Storage.RootDirectory;
         _showTestAlarmMenuOption = _settings.Development.ShowTestAlarmMenuOption;
+        _runtimeAutoStart = _settings.Runtime.AutoStart;
         _challengeExecutablePath = _settings.ChallengeClient.ExecutablePath;
         _challengeWorkingDirectory = _settings.ChallengeClient.WorkingDirectory;
         _callbackUrl = _settings.ChallengeClient.CallbackUrl;
@@ -106,6 +118,7 @@ else
         {
             Storage = new StorageSettings(_storageRoot.Trim()),
             Development = new DevelopmentSettings(_showTestAlarmMenuOption),
+            Runtime = new RuntimeSettings(_runtimeAutoStart),
             ChallengeClient = new QuestAlarm.Infrastructure.ChallengeClient.ChallengeClientOptions
             {
                 ExecutablePath = _challengeExecutablePath.Trim(),

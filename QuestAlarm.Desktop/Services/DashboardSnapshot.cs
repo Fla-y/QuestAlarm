@@ -8,5 +8,6 @@ public sealed record DashboardSnapshot(
     int EnabledAlarmCount,
     int SessionCount,
     Alarm? NextAlarm,
+    DateTime? NextAlarmOccurrenceLocal,
     IReadOnlyList<Alarm> RecentAlarms,
     IReadOnlyList<AlarmSession> RecentSessions);

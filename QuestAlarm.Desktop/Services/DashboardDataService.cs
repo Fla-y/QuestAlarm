@@ -35,7 +35,7 @@ public sealed class DashboardDataService
             .ToList();
 
         var now = DateTime.Now;
-        var nextAlarm = alarms
+        var nextAlarmItem = alarms
             .Where(a => a.IsEnabled)
             .Select(alarm => new
             {
@@ -45,7 +45,6 @@ public sealed class DashboardDataService
             .Where(item => item.Evaluation.Occurrence is not null)
             .OrderBy(item => item.Evaluation.Occurrence!.OccurrenceLocalDateTime)
             .ThenBy(item => item.Alarm.Title)
-            .Select(item => item.Alarm)
             .FirstOrDefault();
 
         return new DashboardSnapshot(
@@ -53,7 +52,8 @@ public sealed class DashboardDataService
             alarms.Count,
             alarms.Count(a => a.IsEnabled),
             sessions.Count,
-            nextAlarm,
+            nextAlarmItem?.Alarm,
+            nextAlarmItem?.Evaluation.Occurrence?.OccurrenceLocalDateTime,
             alarms.Take(6).ToList(),
             sessions.Take(6).ToList());
     }

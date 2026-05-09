@@ -1,3 +1,4 @@
+@page "/runtime"
 @inject DesktopRuntimeService RuntimeService
 
 <div class="topbar">
@@ -5,13 +6,15 @@
         <p class="eyebrow">Host Runtime</p>
         <h2>Runtime</h2>
     </div>
-    <button class="refresh-button" type="button" @onclick="Refresh">Refresh</button>
+    <div class="toolbar-actions">
+        <button class="refresh-button" type="button" @onclick="Refresh">Refresh</button>
+    </div>
 </div>
 
 <section class="panel">
     <div class="panel-heading">
         <h3>Desktop Host</h3>
-        <span>@(RuntimeService.IsRunning ? "Running" : "Stopped")</span>
+        <span class="@GetRuntimeBadgeClass()">@(RuntimeService.IsRunning ? "Running" : "Stopped")</span>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(_statusMessage))
@@ -47,6 +50,19 @@
         {
             <button class="toggle-button" type="button" @onclick="StartAsync" disabled="@_isBusy">Start</button>
         }
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-heading">
+        <h3>Development Test</h3>
+        <span>Due soon</span>
+    </div>
+
+    <div class="form-actions">
+        <button class="toggle-button" type="button" @onclick="CreateTestAlarmAsync" disabled="@_isBusy">
+            Create Test Alarm
+        </button>
     </div>
 </section>
 
@@ -95,6 +111,26 @@
         }
     }
 
+    private async Task CreateTestAlarmAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            var alarm = await RuntimeService.CreateTestAlarmDueSoonAsync();
+            SetStatus($"Test alarm '{alarm.Title}' created.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
     private void Refresh()
     {
         StateHasChanged();
@@ -110,5 +146,12 @@
     {
         _statusMessage = null;
         _statusIsError = false;
+    }
+
+    private string GetRuntimeBadgeClass()
+    {
+        return RuntimeService.IsRunning
+            ? "state-badge completed"
+            : "state-badge failed";
     }
 }

@@ -1,9 +1,9 @@
+using QuestAlarm.Application.Alarms;
 using QuestAlarm.Core.Entities;
-using QuestAlarm.Core.Enums;
 using QuestAlarm.Core.Interfaces;
 using QuestAlarm.Core.Services;
-using QuestAlarm.Core.ValueObjects;
 using QuestAlarm.Infrastructure.Persistence;
+using QuestAlarm.Infrastructure.Time;
 using Serilog;
 using System.Security.Cryptography;
 using System.Text;
@@ -21,22 +21,26 @@ var sessionsDirectory = storagePaths.SessionsDirectory;
 
 builder.Services.AddSingleton<IAlarmRepository>(_ => new JsonAlarmRepository(alarmsDirectory));
 builder.Services.AddSingleton<IAlarmSessionRepository>(_ => new JsonAlarmSessionRepository(sessionsDirectory));
+builder.Services.AddSingleton<IClock, SystemClock>();
 builder.Services.AddSingleton<IAlarmSessionService, AlarmSessionService>();
+builder.Services.AddSingleton<IAlarmManagementService, AlarmManagementService>();
 
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "QuestAlarm.Api" }));
 
-app.MapGet("/api/alarms", async (IAlarmRepository alarmRepository) =>
+app.MapGet("/api/alarms", async (IAlarmManagementService alarmManagementService) =>
 {
-    var alarms = await alarmRepository.GetAllAsync();
+    var alarms = await alarmManagementService.GetAlarmsAsync();
     var response = alarms.Select(ToAlarmResponse);
     return Results.Ok(response);
 });
 
-app.MapGet("/api/alarms/{alarmId:guid}", async (Guid alarmId, IAlarmRepository alarmRepository) =>
+app.MapGet("/api/alarms/{alarmId:guid}", async (
+    Guid alarmId,
+    IAlarmManagementService alarmManagementService) =>
 {
-    var alarm = await alarmRepository.GetByIdAsync(alarmId);
+    var alarm = await alarmManagementService.GetByIdAsync(alarmId);
 
     if (alarm is null)
     {
@@ -46,95 +50,89 @@ app.MapGet("/api/alarms/{alarmId:guid}", async (Guid alarmId, IAlarmRepository a
     return Results.Ok(ToAlarmResponse(alarm));
 });
 
-app.MapPost("/api/alarms", async (CreateAlarmRequestDto request, IAlarmRepository alarmRepository) =>
+app.MapPost("/api/alarms", async (
+    CreateAlarmRequestDto request,
+    IAlarmManagementService alarmManagementService) =>
 {
-    if (!TryBuildScheduleForCreate(request, out var schedule, out var validationError))
+    var result = await alarmManagementService.CreateAsync(new CreateAlarmCommand(
+        request.Title,
+        request.Time,
+        request.StartDate,
+        request.IsRecurring,
+        request.RecurringDays));
+
+    if (!result.Succeeded)
     {
-        return Results.BadRequest(new { error = validationError });
+        return Results.BadRequest(new { error = result.Error });
     }
 
-    Alarm alarm;
-    try
-    {
-        alarm = new Alarm(
-            Guid.NewGuid(),
-            request.Title,
-            schedule!,
-            isEnabled: true,
-            state: AlarmState.Scheduled,
-            createdAtUtc: DateTime.UtcNow);
-    }
-    catch (ArgumentException ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-
-    await alarmRepository.SaveAsync(alarm);
-
-    return Results.Created($"/api/alarms/{alarm.Id}", ToAlarmResponse(alarm));
+    return Results.Created($"/api/alarms/{result.Alarm!.Id}", ToAlarmResponse(result.Alarm));
 });
 
 app.MapPatch("/api/alarms/{alarmId:guid}", async (
     Guid alarmId,
     UpdateAlarmRequestDto request,
-    IAlarmRepository alarmRepository) =>
+    IAlarmManagementService alarmManagementService) =>
 {
-    var alarm = await alarmRepository.GetByIdAsync(alarmId);
+    var result = await alarmManagementService.UpdateAsync(
+        alarmId,
+        new UpdateAlarmCommand(
+            request.Title,
+            request.Time,
+            request.StartDate,
+            request.RecurringDays));
 
-    if (alarm is null)
+    if (!result.Succeeded && result.ErrorKind == AlarmMutationErrorKind.NotFound)
     {
         return Results.NotFound(new { error = "Alarm was not found.", alarmId });
     }
 
-    if (!TryApplyAlarmUpdate(alarm, request, out var validationError))
+    if (!result.Succeeded)
     {
-        return Results.BadRequest(new { error = validationError });
+        return Results.BadRequest(new { error = result.Error });
     }
 
-    await alarmRepository.SaveAsync(alarm);
-
-    return Results.Ok(ToAlarmResponse(alarm));
+    return Results.Ok(ToAlarmResponse(result.Alarm!));
 });
 
-app.MapDelete("/api/alarms/{alarmId:guid}", async (Guid alarmId, IAlarmRepository alarmRepository) =>
+app.MapDelete("/api/alarms/{alarmId:guid}", async (
+    Guid alarmId,
+    IAlarmManagementService alarmManagementService) =>
 {
-    var alarm = await alarmRepository.GetByIdAsync(alarmId);
+    var wasDeleted = await alarmManagementService.DeleteAsync(alarmId);
 
-    if (alarm is null)
+    if (!wasDeleted)
     {
         return Results.NotFound(new { error = "Alarm was not found.", alarmId });
     }
 
-    await alarmRepository.DeleteAsync(alarmId);
     return Results.NoContent();
 });
 
-app.MapPost("/api/alarms/{alarmId:guid}/enable", async (Guid alarmId, IAlarmRepository alarmRepository) =>
+app.MapPost("/api/alarms/{alarmId:guid}/enable", async (
+    Guid alarmId,
+    IAlarmManagementService alarmManagementService) =>
 {
-    var alarm = await alarmRepository.GetByIdAsync(alarmId);
+    var alarm = await alarmManagementService.SetEnabledAsync(alarmId, isEnabled: true);
 
     if (alarm is null)
     {
         return Results.NotFound(new { error = "Alarm was not found.", alarmId });
     }
-
-    alarm.Enable();
-    await alarmRepository.SaveAsync(alarm);
 
     return Results.Ok(ToAlarmResponse(alarm));
 });
 
-app.MapPost("/api/alarms/{alarmId:guid}/disable", async (Guid alarmId, IAlarmRepository alarmRepository) =>
+app.MapPost("/api/alarms/{alarmId:guid}/disable", async (
+    Guid alarmId,
+    IAlarmManagementService alarmManagementService) =>
 {
-    var alarm = await alarmRepository.GetByIdAsync(alarmId);
+    var alarm = await alarmManagementService.SetEnabledAsync(alarmId, isEnabled: false);
 
     if (alarm is null)
     {
         return Results.NotFound(new { error = "Alarm was not found.", alarmId });
     }
-
-    alarm.Disable();
-    await alarmRepository.SaveAsync(alarm);
 
     return Results.Ok(ToAlarmResponse(alarm));
 });
@@ -351,210 +349,6 @@ static AlarmResponseDto ToAlarmResponse(Alarm alarm)
         alarm.State.ToString(),
         alarm.CreatedAtUtc,
         schedule);
-}
-
-static bool TryBuildScheduleForCreate(
-    CreateAlarmRequestDto request,
-    out AlarmSchedule? schedule,
-    out string? validationError)
-{
-    schedule = null;
-    validationError = null;
-
-    if (string.IsNullOrWhiteSpace(request.Title))
-    {
-        validationError = "Title is required.";
-        return false;
-    }
-
-    if (!TimeOnly.TryParse(request.Time, out var time))
-    {
-        validationError = "Time must be a valid value in HH:mm format.";
-        return false;
-    }
-
-    if (request.IsRecurring)
-    {
-        var recurringDays = ParseRecurringDays(request.RecurringDays);
-        if (recurringDays.Count == 0)
-        {
-            validationError = "Recurring alarms require at least one valid recurring day.";
-            return false;
-        }
-
-        schedule = new AlarmSchedule(
-            time,
-            isRecurring: true,
-            recurringDays: recurringDays);
-        return true;
-    }
-
-    if (string.IsNullOrWhiteSpace(request.StartDate) ||
-        !DateOnly.TryParse(request.StartDate, out var startDate))
-    {
-        validationError = "One-time alarms require a valid start date in yyyy-MM-dd format.";
-        return false;
-    }
-
-    schedule = new AlarmSchedule(
-        time,
-        startDate: startDate,
-        isRecurring: false);
-    return true;
-}
-
-static bool TryApplyAlarmUpdate(Alarm alarm, UpdateAlarmRequestDto request, out string? validationError)
-{
-    validationError = null;
-
-    if (request.Title is not null)
-    {
-        if (string.IsNullOrWhiteSpace(request.Title))
-        {
-            validationError = "Title cannot be empty.";
-            return false;
-        }
-
-        alarm.UpdateTitle(request.Title);
-    }
-
-    var hasScheduleChange =
-        request.Time is not null ||
-        request.StartDate is not null ||
-        request.RecurringDays is not null;
-
-    if (!hasScheduleChange)
-    {
-        return true;
-    }
-
-    if (alarm.Schedule.IsRecurring)
-    {
-        if (request.StartDate is not null)
-        {
-            validationError = "Recurring alarms do not support startDate updates.";
-            return false;
-        }
-
-        var time = alarm.Schedule.Time;
-        if (request.Time is not null && !TimeOnly.TryParse(request.Time, out time))
-        {
-            validationError = "Time must be a valid value in HH:mm format.";
-            return false;
-        }
-
-        var recurringDays = alarm.Schedule.RecurringDays;
-        if (request.RecurringDays is not null)
-        {
-            recurringDays = ParseRecurringDays(request.RecurringDays);
-            if (recurringDays.Count == 0)
-            {
-                validationError = "Recurring alarms require at least one valid recurring day.";
-                return false;
-            }
-        }
-
-        alarm.UpdateSchedule(new AlarmSchedule(
-            time,
-            isRecurring: true,
-            recurringDays: recurringDays));
-    }
-    else
-    {
-        if (request.RecurringDays is not null)
-        {
-            validationError = "One-time alarms do not support recurringDays updates.";
-            return false;
-        }
-
-        var time = alarm.Schedule.Time;
-        if (request.Time is not null && !TimeOnly.TryParse(request.Time, out time))
-        {
-            validationError = "Time must be a valid value in HH:mm format.";
-            return false;
-        }
-
-        var startDate = alarm.Schedule.StartDate;
-        if (request.StartDate is not null)
-        {
-            if (!DateOnly.TryParse(request.StartDate, out var parsedDate))
-            {
-                validationError = "StartDate must be a valid value in yyyy-MM-dd format.";
-                return false;
-            }
-
-            startDate = parsedDate;
-        }
-
-        if (startDate is null)
-        {
-            validationError = "One-time alarms require a start date.";
-            return false;
-        }
-
-        alarm.UpdateSchedule(new AlarmSchedule(
-            time,
-            startDate: startDate.Value,
-            isRecurring: false));
-    }
-
-    if (alarm.IsEnabled)
-    {
-        alarm.Enable();
-    }
-
-    return true;
-}
-
-static IReadOnlyCollection<DayOfWeek> ParseRecurringDays(IReadOnlyCollection<string>? rawDays)
-{
-    if (rawDays is null || rawDays.Count == 0)
-    {
-        return Array.Empty<DayOfWeek>();
-    }
-
-    var result = new List<DayOfWeek>();
-
-    foreach (var rawDay in rawDays)
-    {
-        if (TryParseDayOfWeek(rawDay, out var dayOfWeek) && !result.Contains(dayOfWeek))
-        {
-            result.Add(dayOfWeek);
-        }
-    }
-
-    return result;
-}
-
-static bool TryParseDayOfWeek(string? value, out DayOfWeek dayOfWeek)
-{
-    dayOfWeek = default;
-
-    if (string.IsNullOrWhiteSpace(value))
-    {
-        return false;
-    }
-
-    var normalized = value.Trim();
-
-    if (int.TryParse(normalized, out var dayNumber))
-    {
-        dayOfWeek = dayNumber switch
-        {
-            1 => DayOfWeek.Monday,
-            2 => DayOfWeek.Tuesday,
-            3 => DayOfWeek.Wednesday,
-            4 => DayOfWeek.Thursday,
-            5 => DayOfWeek.Friday,
-            6 => DayOfWeek.Saturday,
-            7 => DayOfWeek.Sunday,
-            _ => default
-        };
-
-        return dayNumber is >= 1 and <= 7;
-    }
-
-    return Enum.TryParse(normalized, ignoreCase: true, out dayOfWeek);
 }
 
 internal sealed record SessionContext(AlarmSession? Session, Alarm? Alarm, IResult? Result);

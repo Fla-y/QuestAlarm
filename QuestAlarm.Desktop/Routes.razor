@@ -1,63 +1,53 @@
-<main class="app-shell">
-    <aside class="sidebar">
-        <div class="brand">
-            <span class="brand-mark">Q</span>
-            <div>
-                <h1>QuestAlarm</h1>
-                <p>Escape Bed!</p>
-            </div>
-        </div>
+<Router AppAssembly="@typeof(Routes).Assembly">
+    <Found Context="routeData">
+        <main class="app-shell">
+            <aside class="sidebar">
+                <div class="brand">
+                    <span class="brand-mark">Q</span>
+                    <div>
+                        <h1>QuestAlarm</h1>
+                        <p>Escape Bed!</p>
+                    </div>
+                </div>
 
-        <nav class="nav-list" aria-label="Primary">
-            <button class="@GetNavClass(Page.Dashboard)" type="button" @onclick="() => SetPage(Page.Dashboard)">Dashboard</button>
-            <button class="@GetNavClass(Page.Alarms)" type="button" @onclick="() => SetPage(Page.Alarms)">Alarms</button>
-            <button class="@GetNavClass(Page.Sessions)" type="button" @onclick="() => SetPage(Page.Sessions)">Sessions</button>
-            <button class="@GetNavClass(Page.Runtime)" type="button" @onclick="() => SetPage(Page.Runtime)">Runtime</button>
-            <button class="@GetNavClass(Page.Settings)" type="button" @onclick="() => SetPage(Page.Settings)">Settings</button>
-        </nav>
-    </aside>
+                <nav class="nav-list" aria-label="Primary">
+                    <NavLink class="nav-item" href="" Match="NavLinkMatch.All">Dashboard</NavLink>
+                    <NavLink class="nav-item" href="alarms">Alarms</NavLink>
+                    <NavLink class="nav-item" href="sessions">Sessions</NavLink>
+                    <NavLink class="nav-item" href="runtime">Runtime</NavLink>
+                    <NavLink class="nav-item" href="settings">Settings</NavLink>
+                </nav>
+            </aside>
 
-    <section class="content">
-        @switch (_currentPage)
-        {
-            case Page.Dashboard:
-                <Dashboard />
-                break;
-            case Page.Alarms:
-                <Alarms />
-                break;
-            case Page.Sessions:
-                <Sessions />
-                break;
-            case Page.Runtime:
-                <Runtime />
-                break;
-            case Page.Settings:
-                <Settings />
-                break;
-        }
-    </section>
-</main>
+            <section class="content">
+                <RouteView RouteData="@routeData" />
+            </section>
+        </main>
+    </Found>
+    <NotFound>
+        <main class="app-shell">
+            <aside class="sidebar">
+                <div class="brand">
+                    <span class="brand-mark">Q</span>
+                    <div>
+                        <h1>QuestAlarm</h1>
+                        <p>Escape Bed!</p>
+                    </div>
+                </div>
 
-@code {
-    private Page _currentPage = Page.Dashboard;
+                <nav class="nav-list" aria-label="Primary">
+                    <NavLink class="nav-item" href="" Match="NavLinkMatch.All">Dashboard</NavLink>
+                    <NavLink class="nav-item" href="alarms">Alarms</NavLink>
+                    <NavLink class="nav-item" href="sessions">Sessions</NavLink>
+                    <NavLink class="nav-item" href="runtime">Runtime</NavLink>
+                    <NavLink class="nav-item" href="settings">Settings</NavLink>
+                </nav>
+            </aside>
 
-    private void SetPage(Page page)
-    {
-        _currentPage = page;
-    }
-
-    private string GetNavClass(Page page)
-    {
-        return _currentPage == page ? "nav-item active" : "nav-item";
-    }
-
-    private enum Page
-    {
-        Dashboard,
-        Alarms,
-        Sessions,
-        Runtime,
-        Settings
-    }
-}
+            <section class="content">
+                <Placeholder Title="Page not found"
+                             Description="This QuestAlarm page does not exist yet." />
+            </section>
+        </main>
+    </NotFound>
+</Router>

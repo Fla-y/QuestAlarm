@@ -1,3 +1,4 @@
+@page "/alarms"
 @inject IAlarmAppService AlarmAppService
 
 <div class="topbar">
@@ -5,7 +6,9 @@
         <p class="eyebrow">Offline First</p>
         <h2>Alarms</h2>
     </div>
-    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    <div class="toolbar-actions">
+        <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    </div>
 </div>
 
 <section class="panel">
@@ -21,19 +24,19 @@
     {
         <p class="form-error">@_formError</p>
     }
-@if (!string.IsNullOrWhiteSpace(_statusMessage))
-{
-    <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
-}
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
+    }
 
     <div class="form-grid">
         <label>
             <span>Title</span>
-            <input @bind="_form.Title" />
+            <input @bind="_form.Title" @bind:event="oninput" />
         </label>
         <label>
-            <span>Time (HH:mm)</span>
-            <input @bind="_form.Time" placeholder="07:30" />
+            <span>Time</span>
+            <input type="time" step="60" value="@_form.Time" @onchange="UpdateTime" />
         </label>
         <label>
             <span>Type</span>
@@ -62,15 +65,15 @@
         else
         {
             <label>
-                <span>Date (yyyy-MM-dd)</span>
-                <input @bind="_form.StartDate" placeholder="2026-05-01" />
+                <span>Date</span>
+                <input type="date" value="@_form.StartDate" @onchange="UpdateStartDate" />
             </label>
         }
     </div>
 
     <div class="form-actions">
-    <button class="toggle-button" type="button" @onclick="SubmitAsync" disabled="@(!CanSubmit())">
-            @(_editingAlarmId is null ? "Create" : "Save")
+        <button class="toggle-button" type="button" @onclick="SubmitAsync" disabled="@(_isSubmitting || !CanSubmit())">
+            @GetSubmitButtonText()
         </button>
     </div>
 </section>
@@ -88,19 +91,31 @@ else
     <section class="panel">
         <div class="panel-heading">
             <h3>Configured Alarms</h3>
-            <span>@_alarms.Count</span>
+            <span>@FilteredAlarms.Count() / @_alarms.Count</span>
+        </div>
+
+        <div class="filter-bar" role="group" aria-label="Alarm filters">
+            @foreach (var filter in AlarmFilters)
+            {
+                <button class="@GetFilterButtonClass(filter)"
+                        type="button"
+                        @onclick="() => SetFilter(filter)">
+                    <span>@GetFilterLabel(filter)</span>
+                    <strong>@GetFilterCount(filter)</strong>
+                </button>
+            }
         </div>
 
         <div class="list">
-            @foreach (var alarm in _alarms)
+            @foreach (var alarm in FilteredAlarms)
             {
                 <div class="list-row">
-                    <div>
+                    <div class="alarm-summary">
                         <strong>@alarm.Title</strong>
                         <span>@FormatSchedule(alarm)</span>
                     </div>
                     <div class="alarm-actions">
-                        <em>@alarm.State</em>
+                        <span class="@GetAlarmStateBadgeClass(alarm)">@GetAlarmStateLabel(alarm)</span>
                         <button class="toggle-button" type="button" @onclick="() => BeginEdit(alarm)">Edit</button>
                         <button class="toggle-button" type="button" @onclick="() => ToggleAsync(alarm.Id)">
                             @(alarm.IsEnabled ? "Disable" : "Enable")
@@ -122,12 +137,23 @@ else
 }
 
 @code {
+    private static readonly AlarmFilter[] AlarmFilters =
+    [
+        AlarmFilter.All,
+        AlarmFilter.Enabled,
+        AlarmFilter.Disabled,
+        AlarmFilter.Missed,
+        AlarmFilter.Completed
+    ];
+
     private IReadOnlyList<Core.Entities.Alarm>? _alarms;
     private Guid? _editingAlarmId;
     private Guid? _pendingDeleteAlarmId;
+    private AlarmFilter _selectedFilter = AlarmFilter.All;
     private string? _formError;
     private string? _statusMessage;
     private bool _statusIsError;
+    private bool _isSubmitting;
     private readonly HashSet<DayOfWeek> _selectedRecurringDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday];
     private AlarmFormModel _form = NewDefaultOneTimeForm();
 
@@ -142,6 +168,14 @@ else
         DayOfWeek.Sunday
     ];
 
+    private IEnumerable<Core.Entities.Alarm> FilteredAlarms =>
+        (_alarms ?? [])
+        .Where(MatchesSelectedFilter)
+        .OrderByDescending(alarm => alarm.IsEnabled)
+        .ThenBy(alarm => alarm.Schedule.StartDate ?? DateOnly.MaxValue)
+        .ThenBy(alarm => alarm.Schedule.Time)
+        .ThenBy(alarm => alarm.Title);
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
@@ -149,22 +183,43 @@ else
 
     private async Task LoadAsync()
     {
-        _alarms = await AlarmAppService.GetAlarmsAsync();
+        try
+        {
+            _alarms = await AlarmAppService.GetAlarmsAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private void SetFilter(AlarmFilter filter)
+    {
+        _selectedFilter = filter;
     }
 
     private async Task ToggleAsync(Guid alarmId)
     {
         ClearStatus();
-        var alarm = await AlarmAppService.ToggleEnabledAsync(alarmId);
-        if (alarm is null)
+
+        try
         {
-            SetStatus("Alarm not found.", isError: true);
+            var alarm = await AlarmAppService.ToggleEnabledAsync(alarmId);
+            if (alarm is null)
+            {
+                SetStatus("Alarm not found.", isError: true);
+            }
+            else
+            {
+                SetStatus($"Alarm '{alarm.Title}' {(alarm.IsEnabled ? "enabled" : "disabled")}.", isError: false);
+            }
+
+            await LoadAsync();
         }
-        else
+        catch (Exception ex)
         {
-            SetStatus($"Alarm '{alarm.Title}' {(alarm.IsEnabled ? "enabled" : "disabled")}.", isError: false);
+            SetStatus(ex.Message, isError: true);
         }
-        await LoadAsync();
     }
 
     private void BeginEdit(Core.Entities.Alarm alarm)
@@ -192,41 +247,61 @@ else
         _editingAlarmId = null;
         _formError = null;
         _pendingDeleteAlarmId = null;
-        _form = NewDefaultOneTimeForm();
-        ResetDefaultRecurringDays();
+        ClearStatus();
+        ResetForm();
     }
 
     private async Task SubmitAsync()
     {
         _formError = null;
         ClearStatus();
-        var submission = BuildSubmissionModel();
 
-        if (_editingAlarmId is null)
+        try
         {
-            var (alarm, error) = await AlarmAppService.CreateAsync(submission);
-            if (error is not null)
+            _isSubmitting = true;
+            SetStatus(_editingAlarmId is null ? "Creating alarm..." : "Saving alarm...", isError: false);
+            await InvokeAsync(StateHasChanged);
+
+            var submission = BuildSubmissionModel();
+            string successMessage;
+
+            if (_editingAlarmId is null)
             {
-                _formError = error;
-                return;
+                var (alarm, error) = await AlarmAppService.CreateAsync(submission);
+                if (error is not null)
+                {
+                    _formError = error;
+                    return;
+                }
+
+                successMessage = $"Alarm '{alarm!.Title}' created.";
+            }
+            else
+            {
+                var (alarm, error) = await AlarmAppService.UpdateAsync(_editingAlarmId.Value, submission);
+                if (error is not null)
+                {
+                    _formError = error;
+                    return;
+                }
+
+                successMessage = $"Alarm '{alarm!.Title}' updated.";
             }
 
-            SetStatus($"Alarm '{alarm!.Title}' created.", isError: false);
+            _editingAlarmId = null;
+            _pendingDeleteAlarmId = null;
+            ResetForm();
+            await LoadAsync();
+            SetStatus($"{successMessage} Total alarms: {_alarms?.Count ?? 0}.", isError: false);
         }
-        else
+        catch (Exception ex)
         {
-            var (alarm, error) = await AlarmAppService.UpdateAsync(_editingAlarmId.Value, submission);
-            if (error is not null)
-            {
-                _formError = error;
-                return;
-            }
-
-            SetStatus($"Alarm '{alarm!.Title}' updated.", isError: false);
+            SetStatus(ex.Message, isError: true);
         }
-
-        CancelEdit();
-        await LoadAsync();
+        finally
+        {
+            _isSubmitting = false;
+        }
     }
 
     private void RequestDelete(Guid alarmId)
@@ -244,21 +319,29 @@ else
     private async Task ConfirmDeleteAsync(Guid alarmId)
     {
         ClearStatus();
-        var wasDeleted = await AlarmAppService.DeleteAsync(alarmId);
-        if (!wasDeleted)
-        {
-            SetStatus("Alarm not found.", isError: true);
-            return;
-        }
 
-        if (_editingAlarmId == alarmId)
+        try
         {
-            CancelEdit();
-        }
+            var wasDeleted = await AlarmAppService.DeleteAsync(alarmId);
+            if (!wasDeleted)
+            {
+                SetStatus("Alarm not found.", isError: true);
+                return;
+            }
 
-        _pendingDeleteAlarmId = null;
-        SetStatus("Alarm deleted.", isError: false);
-        await LoadAsync();
+            if (_editingAlarmId == alarmId)
+            {
+                CancelEdit();
+            }
+
+            _pendingDeleteAlarmId = null;
+            SetStatus("Alarm deleted.", isError: false);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
     }
 
     private bool CanSubmit()
@@ -271,6 +354,26 @@ else
         return _form.IsRecurring
             ? _selectedRecurringDays.Count > 0
             : !string.IsNullOrWhiteSpace(_form.StartDate);
+    }
+
+    private string GetSubmitButtonText()
+    {
+        if (_isSubmitting)
+        {
+            return _editingAlarmId is null ? "Creating..." : "Saving...";
+        }
+
+        return _editingAlarmId is null ? "Create" : "Save";
+    }
+
+    private void UpdateTime(ChangeEventArgs eventArgs)
+    {
+        _form.Time = eventArgs.Value?.ToString() ?? string.Empty;
+    }
+
+    private void UpdateStartDate(ChangeEventArgs eventArgs)
+    {
+        _form.StartDate = eventArgs.Value?.ToString();
     }
 
     private void ToggleRecurringDay(DayOfWeek day, ChangeEventArgs eventArgs)
@@ -288,11 +391,21 @@ else
     {
         if (!_form.IsRecurring)
         {
-            return _form with { RecurringDaysCsv = null };
+            return new AlarmFormModel(
+                _form.Title,
+                _form.Time,
+                isRecurring: false,
+                _form.StartDate,
+                recurringDaysCsv: null);
         }
 
         var recurringDaysCsv = string.Join(",", WeekDays.Where(_selectedRecurringDays.Contains));
-        return _form with { StartDate = null, RecurringDaysCsv = recurringDaysCsv };
+        return new AlarmFormModel(
+            _form.Title,
+            _form.Time,
+            isRecurring: true,
+            startDate: null,
+            recurringDaysCsv);
     }
 
     private void ResetDefaultRecurringDays()
@@ -303,6 +416,12 @@ else
         _selectedRecurringDays.Add(DayOfWeek.Wednesday);
         _selectedRecurringDays.Add(DayOfWeek.Thursday);
         _selectedRecurringDays.Add(DayOfWeek.Friday);
+    }
+
+    private void ResetForm()
+    {
+        _form = NewDefaultOneTimeForm();
+        ResetDefaultRecurringDays();
     }
 
     private static string FormatSchedule(Core.Entities.Alarm alarm)
@@ -322,11 +441,89 @@ else
     private static AlarmFormModel NewDefaultOneTimeForm()
     {
         return new AlarmFormModel(
-            Title: string.Empty,
-            Time: "07:30",
-            IsRecurring: false,
-            StartDate: DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd"),
-            RecurringDaysCsv: "Mon,Tue,Wed,Thu,Fri");
+            title: string.Empty,
+            time: "07:30",
+            isRecurring: false,
+            startDate: DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd"),
+            recurringDaysCsv: "Mon,Tue,Wed,Thu,Fri");
+    }
+
+    private bool MatchesSelectedFilter(Core.Entities.Alarm alarm)
+    {
+        return _selectedFilter switch
+        {
+            AlarmFilter.Enabled => alarm.IsEnabled,
+            AlarmFilter.Disabled => !alarm.IsEnabled,
+            AlarmFilter.Missed => alarm.State == Core.Enums.AlarmState.Missed,
+            AlarmFilter.Completed => alarm.State == Core.Enums.AlarmState.Completed,
+            _ => true
+        };
+    }
+
+    private int GetFilterCount(AlarmFilter filter)
+    {
+        if (_alarms is null)
+        {
+            return 0;
+        }
+
+        return filter switch
+        {
+            AlarmFilter.Enabled => _alarms.Count(alarm => alarm.IsEnabled),
+            AlarmFilter.Disabled => _alarms.Count(alarm => !alarm.IsEnabled),
+            AlarmFilter.Missed => _alarms.Count(alarm => alarm.State == Core.Enums.AlarmState.Missed),
+            AlarmFilter.Completed => _alarms.Count(alarm => alarm.State == Core.Enums.AlarmState.Completed),
+            _ => _alarms.Count
+        };
+    }
+
+    private string GetFilterButtonClass(AlarmFilter filter)
+    {
+        return _selectedFilter == filter
+            ? "filter-button active"
+            : "filter-button";
+    }
+
+    private static string GetFilterLabel(AlarmFilter filter)
+    {
+        return filter switch
+        {
+            AlarmFilter.Enabled => "Enabled",
+            AlarmFilter.Disabled => "Disabled",
+            AlarmFilter.Missed => "Missed",
+            AlarmFilter.Completed => "Completed",
+            _ => "All"
+        };
+    }
+
+    private static string GetAlarmStateLabel(Core.Entities.Alarm alarm)
+    {
+        if (!alarm.IsEnabled && alarm.State == Core.Enums.AlarmState.Scheduled)
+        {
+            return "Disabled";
+        }
+
+        return alarm.State.ToString();
+    }
+
+    private static string GetAlarmStateBadgeClass(Core.Entities.Alarm alarm)
+    {
+        if (!alarm.IsEnabled && alarm.State == Core.Enums.AlarmState.Scheduled)
+        {
+            return "state-badge disabled";
+        }
+
+        return alarm.State switch
+        {
+            Core.Enums.AlarmState.Completed => "state-badge completed",
+            Core.Enums.AlarmState.Failed => "state-badge failed",
+            Core.Enums.AlarmState.Missed => "state-badge failed",
+            Core.Enums.AlarmState.Triggering => "state-badge running",
+            Core.Enums.AlarmState.ChallengeRunning => "state-badge running",
+            Core.Enums.AlarmState.Disabled => "state-badge disabled",
+            Core.Enums.AlarmState.Scheduled when alarm.IsEnabled => "state-badge scheduled",
+            _ => "state-badge"
+        };
     }
 
     private static string ShortDay(DayOfWeek day)
@@ -344,5 +541,14 @@ else
     {
         _statusMessage = null;
         _statusIsError = false;
+    }
+
+    private enum AlarmFilter
+    {
+        All,
+        Enabled,
+        Disabled,
+        Missed,
+        Completed
     }
 }

@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\QuestAlarm.Application\QuestAlarm.Application.csproj" />
     <ProjectReference Include="..\QuestAlarm.core\QuestAlarm.Core.csproj" />
     <ProjectReference Include="..\QuestAlarm.infrastructure\QuestAlarm.Infrastructure.csproj" />
   </ItemGroup>

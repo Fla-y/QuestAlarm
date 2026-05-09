@@ -1,3 +1,4 @@
+@page "/sessions"
 @inject SessionListService SessionList
 
 <div class="topbar">
@@ -5,7 +6,9 @@
         <p class="eyebrow">Challenge History</p>
         <h2>Sessions</h2>
     </div>
-    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    <div class="toolbar-actions">
+        <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    </div>
 </div>
 
 @if (_sessions is null)

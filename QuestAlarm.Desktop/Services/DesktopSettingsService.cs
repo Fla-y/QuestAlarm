@@ -1,6 +1,7 @@
 using QuestAlarm.Infrastructure.ChallengeClient;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace QuestAlarm.Desktop.Services;
 
@@ -8,7 +9,8 @@ public sealed class DesktopSettingsService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
     private readonly string _settingsFilePath;
@@ -31,7 +33,7 @@ public sealed class DesktopSettingsService
             var settings = JsonSerializer.Deserialize<DesktopSettingsModel>(json, SerializerOptions)
                 ?? DesktopSettingsModel.CreateDefault(_settingsFilePath);
 
-            return settings with { SettingsFilePath = _settingsFilePath };
+            return Normalize(settings, _settingsFilePath);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -49,19 +51,40 @@ public sealed class DesktopSettingsService
 
         await File.WriteAllTextAsync(_settingsFilePath, json, cancellationToken);
     }
+
+    private static DesktopSettingsModel Normalize(
+        DesktopSettingsModel settings,
+        string settingsFilePath)
+    {
+        var defaults = DesktopSettingsModel.CreateDefault(settingsFilePath);
+
+        return settings with
+        {
+            Storage = settings.Storage ?? defaults.Storage,
+            Development = settings.Development ?? defaults.Development,
+            Runtime = settings.Runtime ?? defaults.Runtime,
+            ChallengeClient = settings.ChallengeClient ?? defaults.ChallengeClient,
+            SettingsFilePath = settingsFilePath
+        };
+    }
 }
 
 public sealed record DesktopSettingsModel(
     StorageSettings Storage,
     DevelopmentSettings Development,
+    RuntimeSettings Runtime,
     ChallengeClientOptions ChallengeClient,
     string? SettingsFilePath = null)
 {
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+
     public static DesktopSettingsModel CreateDefault(string settingsFilePath)
     {
         return new DesktopSettingsModel(
             new StorageSettings("%LOCALAPPDATA%\\QuestAlarm"),
             new DevelopmentSettings(ShowTestAlarmMenuOption: true),
+            new RuntimeSettings(AutoStart: true),
             new ChallengeClientOptions
             {
                 ExecutablePath = "%LOCALAPPDATA%\\QuestAlarm\\Tools\\FakeChallengeClient\\QuestAlarm.FakeChallengeClient.exe",
@@ -76,3 +99,5 @@ public sealed record DesktopSettingsModel(
 public sealed record StorageSettings(string RootDirectory);
 
 public sealed record DevelopmentSettings(bool ShowTestAlarmMenuOption);
+
+public sealed record RuntimeSettings(bool AutoStart);

@@ -1,11 +1,18 @@
+@page "/"
 @inject DashboardDataService DashboardData
+@inject DesktopRuntimeService RuntimeService
 
 <header class="topbar">
     <div>
         <p class="eyebrow">Offline First</p>
         <h2>Alarm Command Center</h2>
     </div>
-    <button class="refresh-button" type="button" @onclick="LoadAsync">Refresh</button>
+    <div class="toolbar-actions">
+        <button class="refresh-button" type="button" @onclick="LoadAsync" disabled="@_isBusy">Refresh</button>
+        <button class="toggle-button" type="button" @onclick="CreateTestAlarmAsync" disabled="@_isBusy">
+            Test Alarm
+        </button>
+    </div>
 </header>
 
 @if (_snapshot is null)
@@ -14,6 +21,11 @@
 }
 else
 {
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <p class="@(_statusIsError ? "form-error" : "form-success")">@_statusMessage</p>
+    }
+
     <section class="metric-grid" aria-label="QuestAlarm summary">
         <div class="metric">
             <span>Alarms</span>
@@ -29,11 +41,54 @@ else
         </div>
     </section>
 
+    <section class="panel runtime-overview">
+        <div class="panel-heading">
+            <h3>Desktop Runtime</h3>
+            <span class="@GetRuntimeBadgeClass()">@(RuntimeService.IsRunning ? "Running" : "Stopped")</span>
+        </div>
+
+        <div class="runtime-grid">
+            <div>
+                <span>Callback API</span>
+                <strong>@RuntimeService.CallbackUrl</strong>
+            </div>
+            <div>
+                <span>Started</span>
+                <strong>@(RuntimeService.StartedAtLocal?.ToString("yyyy-MM-dd HH:mm:ss") ?? "-")</strong>
+            </div>
+            <div>
+                <span>Last Event</span>
+                <strong>@(RuntimeService.LastEvent ?? "-")</strong>
+            </div>
+            <div>
+                <span>Last Error</span>
+                <strong class="@(string.IsNullOrWhiteSpace(RuntimeService.LastError) ? null : "runtime-error")">
+                    @(RuntimeService.LastError ?? "-")
+                </strong>
+            </div>
+        </div>
+
+        <div class="form-actions">
+            @if (RuntimeService.IsRunning)
+            {
+                <button class="toggle-button danger-button" type="button" @onclick="StopRuntimeAsync" disabled="@_isBusy">
+                    Stop Runtime
+                </button>
+            }
+            else
+            {
+                <button class="toggle-button" type="button" @onclick="StartRuntimeAsync" disabled="@_isBusy">
+                    Start Runtime
+                </button>
+            }
+        </div>
+    </section>
+
     <section class="split-grid">
         <article class="panel">
             <div class="panel-heading">
                 <h3>Next Alarm</h3>
-                <span>@(_snapshot.NextAlarm?.State.ToString() ?? "None")</span>
+                <span>@(_snapshot.NextAlarmOccurrenceLocal?.ToString("yyyy-MM-dd HH:mm") ?? "None")</span>
             </div>
 
             @if (_snapshot.NextAlarm is null)
@@ -45,6 +100,7 @@ else
                 <div class="alarm-focus">
                     <strong>@_snapshot.NextAlarm.Title</strong>
                     <span>@FormatAlarmSchedule(_snapshot.NextAlarm)</span>
+                    <span>@FormatNextOccurrence(_snapshot.NextAlarmOccurrenceLocal)</span>
                 </div>
             }
         </article>
@@ -101,6 +157,9 @@ else
 
 @code {
     private DashboardSnapshot? _snapshot;
+    private bool _isBusy;
+    private string? _statusMessage;
+    private bool _statusIsError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -109,7 +168,75 @@ else
 
     private async Task LoadAsync()
     {
-        _snapshot = await DashboardData.GetSnapshotAsync();
+        try
+        {
+            _snapshot = await DashboardData.GetSnapshotAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+    }
+
+    private async Task StartRuntimeAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            await RuntimeService.StartAsync();
+            SetStatus("Runtime started.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task StopRuntimeAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            await RuntimeService.StopAsync();
+            SetStatus("Runtime stopped.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CreateTestAlarmAsync()
+    {
+        _isBusy = true;
+        ClearStatus();
+
+        try
+        {
+            var alarm = await RuntimeService.CreateTestAlarmDueSoonAsync();
+            await LoadAsync();
+            SetStatus($"Test alarm '{alarm.Title}' created.", isError: false);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, isError: true);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
     }
 
     private static string FormatAlarmSchedule(Core.Entities.Alarm alarm)
@@ -130,5 +257,31 @@ else
     private static string ShortId(Guid id)
     {
         return id.ToString("N")[..8];
+    }
+
+    private static string FormatNextOccurrence(DateTime? nextOccurrenceLocal)
+    {
+        return nextOccurrenceLocal is null
+            ? "No next occurrence."
+            : $"Next occurrence: {nextOccurrenceLocal:yyyy-MM-dd HH:mm:ss}";
+    }
+
+    private string GetRuntimeBadgeClass()
+    {
+        return RuntimeService.IsRunning
+            ? "state-badge completed"
+            : "state-badge failed";
+    }
+
+    private void SetStatus(string message, bool isError)
+    {
+        _statusMessage = message;
+        _statusIsError = isError;
+    }
+
+    private void ClearStatus()
+    {
+        _statusMessage = null;
+        _statusIsError = false;
     }
 }

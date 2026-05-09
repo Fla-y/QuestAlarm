@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.Http;
 using QuestAlarm.Core.Entities;
 using QuestAlarm.Core.Enums;
 using QuestAlarm.Core.Interfaces;
+using QuestAlarm.Core.ValueObjects;
 using System.Security.Cryptography;
 using System.Text;
+using Serilog;
 
 namespace QuestAlarm.Desktop.Services;
 
@@ -20,7 +22,10 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
     private readonly IAlarmMissedService _missedService;
     private readonly IAlarmSessionService _sessionService;
     private readonly IChallengeClientLauncher _challengeClientLauncher;
+    private readonly IChallengeActivityService _challengeActivityService;
+    private readonly IAlarmNotificationService _alarmNotificationService;
     private readonly DesktopSettingsService _settingsService;
+    private readonly ILogger _logger;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private CancellationTokenSource? _runtimeCancellation;
@@ -37,7 +42,10 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         IAlarmMissedService missedService,
         IAlarmSessionService sessionService,
         IChallengeClientLauncher challengeClientLauncher,
-        DesktopSettingsService settingsService)
+        IChallengeActivityService challengeActivityService,
+        IAlarmNotificationService alarmNotificationService,
+        DesktopSettingsService settingsService,
+        ILogger logger)
     {
         _alarmRepository = alarmRepository ?? throw new ArgumentNullException(nameof(alarmRepository));
         _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
@@ -48,7 +56,10 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         _missedService = missedService ?? throw new ArgumentNullException(nameof(missedService));
         _sessionService = sessionService ?? throw new ArgumentNullException(nameof(sessionService));
         _challengeClientLauncher = challengeClientLauncher ?? throw new ArgumentNullException(nameof(challengeClientLauncher));
+        _challengeActivityService = challengeActivityService ?? throw new ArgumentNullException(nameof(challengeActivityService));
+        _alarmNotificationService = alarmNotificationService ?? throw new ArgumentNullException(nameof(alarmNotificationService));
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
+        _logger = logger.ForContext<DesktopRuntimeService>() ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public bool IsRunning => _runtimeCancellation is { IsCancellationRequested: false };
@@ -56,6 +67,35 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
     public DateTime? StartedAtLocal { get; private set; }
     public string? LastEvent { get; private set; }
     public string? LastError { get; private set; }
+
+    public async Task<Alarm> CreateTestAlarmDueSoonAsync(CancellationToken cancellationToken = default)
+    {
+        var dueAtLocal = DateTime.Now.AddMinutes(1);
+        dueAtLocal = new DateTime(
+            dueAtLocal.Year,
+            dueAtLocal.Month,
+            dueAtLocal.Day,
+            dueAtLocal.Hour,
+            dueAtLocal.Minute,
+            0,
+            DateTimeKind.Local);
+
+        var alarm = new Alarm(
+            Guid.NewGuid(),
+            $"Desktop test alarm {dueAtLocal:HH:mm}",
+            new AlarmSchedule(
+                TimeOnly.FromDateTime(dueAtLocal),
+                startDate: DateOnly.FromDateTime(dueAtLocal),
+                isRecurring: false),
+            isEnabled: true,
+            state: AlarmState.Scheduled,
+            createdAtUtc: _clock.UtcNow);
+
+        await _alarmRepository.SaveAsync(alarm, cancellationToken);
+
+        LastEvent = $"Created test alarm due at {dueAtLocal:HH:mm}.";
+        return alarm;
+    }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
@@ -81,6 +121,7 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
             StartedAtLocal = DateTime.Now;
             LastError = null;
             LastEvent = "Runtime started.";
+            _logger.Information("Desktop runtime started {CallbackUrl}", CallbackUrl);
         }
         catch
         {
@@ -100,6 +141,7 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         {
             await StopInternalAsync();
             LastEvent = "Runtime stopped.";
+            _logger.Information("Desktop runtime stopped");
         }
         finally
         {
@@ -123,12 +165,48 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "QuestAlarm.Desktop" }));
         app.MapPost("/api/sessions/{sessionId:guid}/challenge-running", async (Guid sessionId, HttpRequest request) =>
             await HandleSessionCallbackAsync(sessionId, request, CallbackAction.StartChallenge));
+        app.MapPost("/api/sessions/{sessionId:guid}/activity", async (Guid sessionId, HttpRequest request) =>
+            await HandleSessionActivityAsync(sessionId, request));
         app.MapPost("/api/sessions/{sessionId:guid}/completed", async (Guid sessionId, HttpRequest request) =>
             await HandleSessionCallbackAsync(sessionId, request, CallbackAction.CompleteChallenge));
         app.MapPost("/api/sessions/{sessionId:guid}/failed", async (Guid sessionId, HttpRequest request) =>
             await HandleSessionCallbackAsync(sessionId, request, CallbackAction.FailChallenge));
 
         return app;
+    }
+
+    private async Task<IResult> HandleSessionActivityAsync(Guid sessionId, HttpRequest request)
+    {
+        var session = await _sessionRepository.GetByIdAsync(sessionId);
+        if (session is null)
+        {
+            return Results.NotFound(new { error = "Session was not found.", sessionId });
+        }
+
+        var tokenResult = ValidateChallengeToken(session, request);
+        if (tokenResult is not null)
+        {
+            return tokenResult;
+        }
+
+        if (session.State is AlarmState.Completed or AlarmState.Failed)
+        {
+            return Results.Conflict(new
+            {
+                error = "Session is already finished.",
+                sessionId,
+                State = session.State.ToString()
+            });
+        }
+
+        var snapshot = _challengeActivityService.MarkActivity(session.Id, "callback-api");
+
+        return Results.Ok(new
+        {
+            sessionId = snapshot.SessionId,
+            snapshot.LastActivityUtc,
+            snapshot.Source
+        });
     }
 
     private async Task<IResult> HandleSessionCallbackAsync(
@@ -160,12 +238,33 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
             {
                 case CallbackAction.StartChallenge:
                     _sessionService.StartChallenge(session, alarm);
+                    _challengeActivityService.MarkActivity(session.Id, "challenge-running");
+                    await _alarmNotificationService.MarkChallengeRunningAsync(session.Id);
+                    _logger.Information(
+                        "Session challenge running {SessionId} {AlarmId} {AlarmTitle}",
+                        session.Id,
+                        alarm.Id,
+                        alarm.Title);
                     break;
                 case CallbackAction.CompleteChallenge:
                     _sessionService.CompleteChallenge(session, alarm, _clock.UtcNow);
+                    _challengeActivityService.ClearActivity(session.Id);
+                    await _alarmNotificationService.MarkChallengeCompletedAsync(session.Id);
+                    _logger.Information(
+                        "Session completed {SessionId} {AlarmId} {AlarmTitle}",
+                        session.Id,
+                        alarm.Id,
+                        alarm.Title);
                     break;
                 case CallbackAction.FailChallenge:
                     _sessionService.FailChallenge(session, alarm);
+                    _challengeActivityService.ClearActivity(session.Id);
+                    await _alarmNotificationService.MarkChallengeFailedAsync(session.Id);
+                    _logger.Warning(
+                        "Session failed {SessionId} {AlarmId} {AlarmTitle}",
+                        session.Id,
+                        alarm.Id,
+                        alarm.Title);
                     break;
             }
         }
@@ -217,7 +316,27 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
 
                     await _sessionRepository.SaveAsync(session, cancellationToken);
                     await _alarmRepository.SaveAsync(trigger.Alarm, cancellationToken);
+                    _logger.Information(
+                        "Alarm triggered {AlarmId} {AlarmTitle} {SessionId} {OccurrenceLocalDateTime}",
+                        trigger.Alarm.Id,
+                        trigger.Alarm.Title,
+                        session.Id,
+                        trigger.Occurrence.OccurrenceLocalDateTime);
+
+                    await _alarmNotificationService.ShowTriggeredAlarmAsync(
+                        new AlarmNotificationRequest(
+                            trigger.Alarm.Id,
+                            trigger.Alarm.Title,
+                            trigger.Occurrence.OccurrenceLocalDateTime,
+                            now,
+                            session.Id),
+                        cancellationToken);
                     await _challengeClientLauncher.LaunchAsync(session, trigger.Alarm, cancellationToken);
+                    _logger.Information(
+                        "Challenge client launched {AlarmId} {AlarmTitle} {SessionId}",
+                        trigger.Alarm.Id,
+                        trigger.Alarm.Title,
+                        session.Id);
 
                     LastEvent = $"Triggered {trigger.Alarm.Title}.";
                 }
@@ -233,6 +352,10 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
 
                     _missedService.MarkMissed(alarm);
                     await _alarmRepository.SaveAsync(alarm, cancellationToken);
+                    _logger.Warning(
+                        "One-time alarm marked missed {AlarmId} {AlarmTitle}",
+                        alarm.Id,
+                        alarm.Title);
 
                     LastEvent = $"Marked {alarm.Title} as missed.";
                 }
@@ -246,6 +369,7 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
             catch (Exception ex)
             {
                 LastError = ex.Message;
+                _logger.Error(ex, "Desktop scheduler loop failed");
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             }
         }

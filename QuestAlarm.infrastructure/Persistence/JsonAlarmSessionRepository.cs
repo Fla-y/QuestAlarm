@@ -35,7 +35,7 @@ public sealed class JsonAlarmSessionRepository : IAlarmSessionRepository
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var session = await TryReadSessionAsync(filePath, cancellationToken);
+            var session = await ReadSessionOrQuarantineAsync(filePath, cancellationToken);
 
             if (session is null)
             {
@@ -57,7 +57,7 @@ public sealed class JsonAlarmSessionRepository : IAlarmSessionRepository
             return null;
         }
 
-        return await TryReadSessionAsync(filePath, cancellationToken);
+        return await ReadSessionOrQuarantineAsync(filePath, cancellationToken);
     }
 
     public async Task SaveAsync(AlarmSession session, CancellationToken cancellationToken = default)
@@ -76,7 +76,7 @@ public sealed class JsonAlarmSessionRepository : IAlarmSessionRepository
         return Path.Combine(_sessionsDirectoryPath, $"{sessionId}.json");
     }
 
-    private static async Task<AlarmSession?> TryReadSessionAsync(string filePath, CancellationToken cancellationToken)
+    private static async Task<AlarmSession?> ReadSessionOrQuarantineAsync(string filePath, CancellationToken cancellationToken)
     {
         try
         {
@@ -89,6 +89,7 @@ public sealed class JsonAlarmSessionRepository : IAlarmSessionRepository
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException or ArgumentException)
         {
+            JsonCorruptFileQuarantine.TryQuarantine(filePath, ex);
             return null;
         }
     }
