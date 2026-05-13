@@ -1,6 +1,30 @@
+@font-face {
+    font-family: "Stack Sans Text";
+    src: url("fonts/StackSansText-Regular.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Stack Sans Text";
+    src: url("fonts/StackSansText-SemiBold.woff2") format("woff2");
+    font-weight: 600 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Stack Sans Text";
+    src: url("fonts/StackSansText-Bold.woff2") format("woff2");
+    font-weight: 800;
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
     color: #1f2933;
-    font-family: "Segoe UI", Arial, sans-serif;
+    font-family: "Stack Sans Text", "Segoe UI", Arial, sans-serif;
     background: #f5f7fa;
 }
 
