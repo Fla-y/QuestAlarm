@@ -1,0 +1,53 @@
+{
+  "wordCounts": {
+    "Easy": 4,
+    "Normal": 7,
+    "Hard": 10
+  },
+  "words": {
+    "Easy": [
+      "wake",
+      "rise",
+      "start",
+      "focus",
+      "light",
+      "quest",
+      "ready",
+      "type",
+      "move",
+      "clear"
+    ],
+    "Normal": [
+      "alarm",
+      "morning",
+      "steady",
+      "energy",
+      "typing",
+      "awake",
+      "challenge",
+      "rhythm",
+      "signal",
+      "launch",
+      "bright",
+      "active",
+      "minute",
+      "target"
+    ],
+    "Hard": [
+      "discipline",
+      "momentum",
+      "precision",
+      "attention",
+      "keyboard",
+      "activation",
+      "resilience",
+      "sequence",
+      "punctual",
+      "determined",
+      "calibrate",
+      "resolve",
+      "navigate",
+      "complete"
+    ]
+  }
+}

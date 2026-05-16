@@ -17,6 +17,7 @@ public sealed class ProcessChallengeClientLauncher : IChallengeClientLauncher
     public Task<ChallengeClientLaunchResult> LaunchAsync(
         AlarmSession session,
         Alarm alarm,
+        string? challengeConfigPath = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -42,7 +43,7 @@ public sealed class ProcessChallengeClientLauncher : IChallengeClientLauncher
             UseShellExecute = false
         };
 
-        foreach (var argument in BuildArguments(session, alarm))
+        foreach (var argument in BuildArguments(session, alarm, challengeConfigPath))
         {
             startInfo.ArgumentList.Add(argument);
         }
@@ -66,13 +67,14 @@ public sealed class ProcessChallengeClientLauncher : IChallengeClientLauncher
         }
     }
 
-    private IReadOnlyCollection<string> BuildArguments(AlarmSession session, Alarm alarm)
+    private IReadOnlyCollection<string> BuildArguments(AlarmSession session, Alarm alarm, string? challengeConfigPath)
     {
         var arguments = _options.ArgumentsTemplate
             .Replace("{SessionId}", session.Id.ToString(), StringComparison.OrdinalIgnoreCase)
             .Replace("{AlarmId}", alarm.Id.ToString(), StringComparison.OrdinalIgnoreCase)
             .Replace("{CallbackUrl}", _options.CallbackUrl, StringComparison.OrdinalIgnoreCase)
-            .Replace("{ChallengeToken}", session.ChallengeToken, StringComparison.OrdinalIgnoreCase);
+            .Replace("{ChallengeToken}", session.ChallengeToken, StringComparison.OrdinalIgnoreCase)
+            .Replace("{ChallengeConfigPath}", challengeConfigPath ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 
         return SplitArguments(arguments);
     }

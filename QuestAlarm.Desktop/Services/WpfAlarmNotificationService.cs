@@ -10,15 +10,18 @@ public sealed class WpfAlarmNotificationService : IAlarmNotificationService
     private static readonly TimeSpan DefaultInactivityTimeout = TimeSpan.FromSeconds(10);
 
     private readonly ConcurrentDictionary<Guid, AlarmPopupWindow> _openPopupsBySession = new();
+    private readonly ChallengeLaunchService _challengeLaunchService;
     private readonly IChallengeActivityService _challengeActivityService;
     private readonly TimeSpan _inactivityTimeout;
     private readonly ILogger _logger;
 
     public WpfAlarmNotificationService(
+        ChallengeLaunchService challengeLaunchService,
         IChallengeActivityService challengeActivityService,
         IConfiguration configuration,
         ILogger logger)
     {
+        _challengeLaunchService = challengeLaunchService ?? throw new ArgumentNullException(nameof(challengeLaunchService));
         _challengeActivityService = challengeActivityService ?? throw new ArgumentNullException(nameof(challengeActivityService));
         _inactivityTimeout = ResolveInactivityTimeout(configuration);
         _logger = logger.ForContext<WpfAlarmNotificationService>() ?? throw new ArgumentNullException(nameof(logger));
@@ -45,6 +48,7 @@ public sealed class WpfAlarmNotificationService : IAlarmNotificationService
         {
             var popup = new AlarmPopupWindow(
                 request,
+                _challengeLaunchService,
                 _challengeActivityService,
                 _inactivityTimeout);
 
@@ -77,6 +81,14 @@ public sealed class WpfAlarmNotificationService : IAlarmNotificationService
             "Alarm popup marked challenge running {SessionId}");
     }
 
+    public Task MarkChallengeActivityAsync(ChallengeActivitySnapshot activity)
+    {
+        return UpdatePopupAsync(
+            activity.SessionId,
+            popup => popup.MarkChallengeActivity(activity),
+            "Alarm popup marked challenge activity {SessionId}");
+    }
+
     public Task MarkChallengeCompletedAsync(Guid sessionId)
     {
         return UpdatePopupAsync(
@@ -91,6 +103,14 @@ public sealed class WpfAlarmNotificationService : IAlarmNotificationService
             sessionId,
             popup => popup.MarkChallengeFailed(),
             "Alarm popup marked challenge failed {SessionId}");
+    }
+
+    public Task MarkChallengeLaunchFailedAsync(Guid sessionId, string errorMessage)
+    {
+        return UpdatePopupAsync(
+            sessionId,
+            popup => popup.MarkChallengeLaunchFailed(errorMessage),
+            "Alarm popup marked challenge launch failed {SessionId}");
     }
 
     private Task UpdatePopupAsync(

@@ -45,6 +45,20 @@
                 <option value="true">Recurring</option>
             </select>
         </label>
+        <label>
+            <span>Challenge Type</span>
+            <select @bind="_form.ChallengeType">
+                <option value="Typing">Typing</option>
+            </select>
+        </label>
+        <label>
+            <span>Challenge Difficulty</span>
+            <select @bind="_form.ChallengeDifficulty">
+                <option value="Easy">Easy</option>
+                <option value="Normal">Normal</option>
+                <option value="Hard">Hard</option>
+            </select>
+        </label>
         @if (_form.IsRecurring)
         {
             <div class="form-field wide-field">
@@ -113,6 +127,7 @@ else
                     <div class="alarm-summary">
                         <strong>@alarm.Title</strong>
                         <span>@FormatSchedule(alarm)</span>
+                        <span>@alarm.ChallengeType / @alarm.ChallengeDifficulty</span>
                     </div>
                     <div class="alarm-actions">
                         <span class="@GetAlarmStateBadgeClass(alarm)">@GetAlarmStateLabel(alarm)</span>
@@ -233,7 +248,9 @@ else
             alarm.Schedule.Time.ToString("HH:mm"),
             alarm.Schedule.IsRecurring,
             alarm.Schedule.StartDate?.ToString("yyyy-MM-dd"),
-            alarm.Schedule.IsRecurring ? string.Join(",", alarm.Schedule.RecurringDays) : null);
+            alarm.Schedule.IsRecurring ? string.Join(",", alarm.Schedule.RecurringDays) : null,
+            alarm.ChallengeType.ToString(),
+            alarm.ChallengeDifficulty.ToString());
 
         _selectedRecurringDays.Clear();
         foreach (var day in alarm.Schedule.RecurringDays)
@@ -396,7 +413,9 @@ else
                 _form.Time,
                 isRecurring: false,
                 _form.StartDate,
-                recurringDaysCsv: null);
+                recurringDaysCsv: null,
+                _form.ChallengeType,
+                _form.ChallengeDifficulty);
         }
 
         var recurringDaysCsv = string.Join(",", WeekDays.Where(_selectedRecurringDays.Contains));
@@ -405,7 +424,9 @@ else
             _form.Time,
             isRecurring: true,
             startDate: null,
-            recurringDaysCsv);
+            recurringDaysCsv,
+            _form.ChallengeType,
+            _form.ChallengeDifficulty);
     }
 
     private void ResetDefaultRecurringDays()
@@ -445,7 +466,9 @@ else
             time: "07:30",
             isRecurring: false,
             startDate: DateOnly.FromDateTime(DateTime.Now).ToString("yyyy-MM-dd"),
-            recurringDaysCsv: "Mon,Tue,Wed,Thu,Fri");
+            recurringDaysCsv: "Mon,Tue,Wed,Thu,Fri",
+            challengeType: "Typing",
+            challengeDifficulty: "Normal");
     }
 
     private bool MatchesSelectedFilter(Core.Entities.Alarm alarm)

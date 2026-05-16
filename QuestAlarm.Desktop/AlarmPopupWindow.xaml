@@ -84,11 +84,12 @@
             </Border>
 
             <Button Grid.Row="2"
+                    x:Name="StartQuestButton"
                     Width="120"
                     Height="38"
                     HorizontalAlignment="Right"
-                    Content="Close (dev)"
-                    Click="CloseButton_Click" />
+                    Content="Start Quest"
+                    Click="StartQuestButton_Click" />
         </Grid>
     </Border>
 </Window>

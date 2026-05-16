@@ -21,7 +21,6 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
     private readonly IAlarmTriggerService _triggerService;
     private readonly IAlarmMissedService _missedService;
     private readonly IAlarmSessionService _sessionService;
-    private readonly IChallengeClientLauncher _challengeClientLauncher;
     private readonly IChallengeActivityService _challengeActivityService;
     private readonly IAlarmNotificationService _alarmNotificationService;
     private readonly DesktopSettingsService _settingsService;
@@ -41,7 +40,6 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         IAlarmTriggerService triggerService,
         IAlarmMissedService missedService,
         IAlarmSessionService sessionService,
-        IChallengeClientLauncher challengeClientLauncher,
         IChallengeActivityService challengeActivityService,
         IAlarmNotificationService alarmNotificationService,
         DesktopSettingsService settingsService,
@@ -55,7 +53,6 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         _triggerService = triggerService ?? throw new ArgumentNullException(nameof(triggerService));
         _missedService = missedService ?? throw new ArgumentNullException(nameof(missedService));
         _sessionService = sessionService ?? throw new ArgumentNullException(nameof(sessionService));
-        _challengeClientLauncher = challengeClientLauncher ?? throw new ArgumentNullException(nameof(challengeClientLauncher));
         _challengeActivityService = challengeActivityService ?? throw new ArgumentNullException(nameof(challengeActivityService));
         _alarmNotificationService = alarmNotificationService ?? throw new ArgumentNullException(nameof(alarmNotificationService));
         _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
@@ -200,6 +197,7 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
         }
 
         var snapshot = _challengeActivityService.MarkActivity(session.Id, "callback-api");
+        await _alarmNotificationService.MarkChallengeActivityAsync(snapshot);
 
         return Results.Ok(new
         {
@@ -331,13 +329,8 @@ public sealed class DesktopRuntimeService : IAsyncDisposable
                             now,
                             session.Id),
                         cancellationToken);
-                    await _challengeClientLauncher.LaunchAsync(session, trigger.Alarm, cancellationToken);
-                    _logger.Information(
-                        "Challenge client launched {AlarmId} {AlarmTitle} {SessionId}",
-                        trigger.Alarm.Id,
-                        trigger.Alarm.Title,
-                        session.Id);
 
+                    LastError = null;
                     LastEvent = $"Triggered {trigger.Alarm.Title}.";
                 }
 

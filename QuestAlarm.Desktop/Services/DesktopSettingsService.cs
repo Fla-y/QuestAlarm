@@ -87,10 +87,10 @@ public sealed record DesktopSettingsModel(
             new RuntimeSettings(AutoStart: true),
             new ChallengeClientOptions
             {
-                ExecutablePath = "%LOCALAPPDATA%\\QuestAlarm\\Tools\\FakeChallengeClient\\QuestAlarm.FakeChallengeClient.exe",
-                ArgumentsTemplate = "--session-id {SessionId} --alarm-id {AlarmId} --callback-url {CallbackUrl} --challenge-token {ChallengeToken}",
+                ExecutablePath = "D:\\Codice\\QuestAlarm\\QuestAlarm.exe",
+                ArgumentsTemplate = "--config \"{ChallengeConfigPath}\" --session-id {SessionId} --alarm-id {AlarmId} --callback-url {CallbackUrl} --challenge-token {ChallengeToken}",
                 CallbackUrl = "http://localhost:5055",
-                WorkingDirectory = "%LOCALAPPDATA%\\QuestAlarm\\Tools\\FakeChallengeClient"
+                WorkingDirectory = "D:\\Codice\\QuestAlarm"
             },
             settingsFilePath);
     }

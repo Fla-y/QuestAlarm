@@ -47,6 +47,7 @@ public sealed class AlarmConsoleActions
             Console.WriteLine($"Time:      {alarm.Schedule.Time}");
             Console.WriteLine($"Date:      {dateLabel}");
             Console.WriteLine($"Days:      {recurringDaysLabel}");
+            Console.WriteLine($"Challenge: {alarm.ChallengeType} / {alarm.ChallengeDifficulty}");
             Console.WriteLine($"Enabled:   {alarm.IsEnabled}");
             Console.WriteLine($"State:     {alarm.State}");
             Console.WriteLine(new string('-', 50));

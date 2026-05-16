@@ -8,6 +8,8 @@ public sealed class Alarm
     public Guid Id { get; private set; }
     public string Title { get; private set; }
     public AlarmSchedule Schedule { get; private set; }
+    public ChallengeType ChallengeType { get; private set; }
+    public ChallengeDifficulty ChallengeDifficulty { get; private set; }
     public bool IsEnabled { get; private set; }
     public AlarmState State { get; private set; }
     public DateTime CreatedAtUtc { get; private set; }
@@ -18,7 +20,9 @@ public sealed class Alarm
         AlarmSchedule schedule,
         bool isEnabled,
         AlarmState state,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        ChallengeType challengeType = ChallengeType.Typing,
+        ChallengeDifficulty challengeDifficulty = ChallengeDifficulty.Normal)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -28,6 +32,8 @@ public sealed class Alarm
         Id = id;
         Title = title.Trim();
         Schedule = schedule;
+        ChallengeType = challengeType;
+        ChallengeDifficulty = challengeDifficulty;
         IsEnabled = isEnabled;
         State = state;
         CreatedAtUtc = createdAtUtc;
@@ -91,5 +97,11 @@ public sealed class Alarm
         ArgumentNullException.ThrowIfNull(schedule);
 
         Schedule = schedule;
+    }
+
+    public void UpdateChallenge(ChallengeType challengeType, ChallengeDifficulty challengeDifficulty)
+    {
+        ChallengeType = challengeType;
+        ChallengeDifficulty = challengeDifficulty;
     }
 }

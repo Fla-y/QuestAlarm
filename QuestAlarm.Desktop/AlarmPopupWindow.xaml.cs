@@ -11,6 +11,7 @@ public partial class AlarmPopupWindow : Window
     private static readonly TimeSpan ActivitySignalThrottle = TimeSpan.FromSeconds(1);
 
     private readonly AlarmNotificationRequest _request;
+    private readonly ChallengeLaunchService _challengeLaunchService;
     private readonly IChallengeActivityService _challengeActivityService;
     private readonly TimeSpan _inactivityTimeout;
     private readonly DispatcherTimer _soundTimer;
@@ -18,15 +19,20 @@ public partial class AlarmPopupWindow : Window
     private DateTime _lastActivitySignalUtc = DateTime.MinValue;
     private bool _isCompleted;
     private bool _isFailed;
+    private bool _isLaunching;
+    private bool _wasLaunched;
+    private bool _isChallengeRunning;
 
     public AlarmPopupWindow(
         AlarmNotificationRequest request,
+        ChallengeLaunchService challengeLaunchService,
         IChallengeActivityService challengeActivityService,
         TimeSpan inactivityTimeout)
     {
         InitializeComponent();
 
         _request = request ?? throw new ArgumentNullException(nameof(request));
+        _challengeLaunchService = challengeLaunchService ?? throw new ArgumentNullException(nameof(challengeLaunchService));
         _challengeActivityService = challengeActivityService ?? throw new ArgumentNullException(nameof(challengeActivityService));
         _inactivityTimeout = inactivityTimeout;
 
@@ -79,6 +85,11 @@ public partial class AlarmPopupWindow : Window
         }
 
         _isFailed = false;
+        _isLaunching = false;
+        _wasLaunched = true;
+        _isChallengeRunning = true;
+        StartQuestButton.IsEnabled = false;
+        StartQuestButton.Content = "Quest Running";
         SetChallengeState(
             "Challenge running",
             "Keep interacting with the puzzle. The sound stays paused while activity continues.",
@@ -91,6 +102,9 @@ public partial class AlarmPopupWindow : Window
     {
         _isCompleted = true;
         _isFailed = false;
+        _isChallengeRunning = false;
+        StartQuestButton.IsEnabled = false;
+        StartQuestButton.Content = "Completed";
         _soundTimer.Stop();
         SetChallengeState(
             "Completed",
@@ -102,6 +116,16 @@ public partial class AlarmPopupWindow : Window
         _completedCloseTimer.Start();
     }
 
+    public void MarkChallengeActivity(ChallengeActivitySnapshot activity)
+    {
+        if (_isCompleted || _isFailed || !_isChallengeRunning)
+        {
+            return;
+        }
+
+        UpdateActivityStatus(activity, DateTime.UtcNow);
+    }
+
     public void MarkChallengeFailed()
     {
         if (_isCompleted)
@@ -110,6 +134,10 @@ public partial class AlarmPopupWindow : Window
         }
 
         _isFailed = true;
+        _isLaunching = false;
+        _isChallengeRunning = false;
+        StartQuestButton.IsEnabled = true;
+        StartQuestButton.Content = "Retry Quest";
         SetChallengeState(
             "Failed",
             "Challenge failed. The alarm remains active.",
@@ -120,6 +148,28 @@ public partial class AlarmPopupWindow : Window
         PlayAlarmSound();
     }
 
+    public void MarkChallengeLaunchFailed(string errorMessage)
+    {
+        if (_isCompleted)
+        {
+            return;
+        }
+
+        _isFailed = true;
+        _isLaunching = false;
+        _isChallengeRunning = false;
+        StartQuestButton.IsEnabled = true;
+        StartQuestButton.Content = "Retry Quest";
+        SetChallengeState(
+            "Challenge failed to start",
+            errorMessage,
+            "#FFF1F2",
+            "#B91C1C",
+            "#FECDD3");
+        ActivityStatusText.Text = "Sound active. Check the challenge executable path in Settings.";
+        PlayAlarmSound();
+    }
+
     private static void PlayAlarmSound()
     {
         SystemSounds.Exclamation.Play();
@@ -127,7 +177,7 @@ public partial class AlarmPopupWindow : Window
 
     private void RecordActivity(string source)
     {
-        if (_isCompleted || _isFailed)
+        if (_isCompleted || _isFailed || !_isChallengeRunning)
         {
             return;
         }
@@ -219,8 +269,40 @@ public partial class AlarmPopupWindow : Window
         return (Brush)new BrushConverter().ConvertFromString(value)!;
     }
 
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    private async void StartQuestButton_Click(object sender, RoutedEventArgs e)
     {
-        Close();
+        if (_isCompleted || _isLaunching)
+        {
+            return;
+        }
+
+        _isFailed = false;
+        _isLaunching = true;
+        StartQuestButton.IsEnabled = false;
+        StartQuestButton.Content = _wasLaunched ? "Retrying..." : "Starting...";
+        ActivityStatusText.Text = "Starting quest...";
+
+        try
+        {
+            var result = await _challengeLaunchService.LaunchAsync(_request.SessionId);
+
+            if (!result.WasStarted)
+            {
+                MarkChallengeLaunchFailed(result.ErrorMessage ?? "Challenge client was not started.");
+                return;
+            }
+
+            _wasLaunched = true;
+            StartQuestButton.Content = "Quest Starting";
+            ActivityStatusText.Text = "Quest launched. Waiting for activity...";
+        }
+        catch (Exception ex)
+        {
+            MarkChallengeLaunchFailed(ex.Message);
+        }
+        finally
+        {
+            _isLaunching = false;
+        }
     }
 }

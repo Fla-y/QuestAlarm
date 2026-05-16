@@ -59,7 +59,9 @@ app.MapPost("/api/alarms", async (
         request.Time,
         request.StartDate,
         request.IsRecurring,
-        request.RecurringDays));
+        request.RecurringDays,
+        request.ChallengeType,
+        request.ChallengeDifficulty));
 
     if (!result.Succeeded)
     {
@@ -80,7 +82,9 @@ app.MapPatch("/api/alarms/{alarmId:guid}", async (
             request.Title,
             request.Time,
             request.StartDate,
-            request.RecurringDays));
+            request.RecurringDays,
+            request.ChallengeType,
+            request.ChallengeDifficulty));
 
     if (!result.Succeeded && result.ErrorKind == AlarmMutationErrorKind.NotFound)
     {
@@ -348,7 +352,9 @@ static AlarmResponseDto ToAlarmResponse(Alarm alarm)
         alarm.IsEnabled,
         alarm.State.ToString(),
         alarm.CreatedAtUtc,
-        schedule);
+        schedule,
+        alarm.ChallengeType.ToString(),
+        alarm.ChallengeDifficulty.ToString());
 }
 
 internal sealed record SessionContext(AlarmSession? Session, Alarm? Alarm, IResult? Result);
@@ -358,7 +364,9 @@ internal sealed record AlarmResponseDto(
     bool IsEnabled,
     string State,
     DateTime CreatedAtUtc,
-    AlarmScheduleResponseDto Schedule);
+    AlarmScheduleResponseDto Schedule,
+    string ChallengeType,
+    string ChallengeDifficulty);
 
 internal sealed record AlarmScheduleResponseDto(
     TimeOnly Time,
@@ -371,10 +379,14 @@ internal sealed record CreateAlarmRequestDto(
     string Time,
     string? StartDate,
     bool IsRecurring,
-    IReadOnlyCollection<string>? RecurringDays);
+    IReadOnlyCollection<string>? RecurringDays,
+    string? ChallengeType = null,
+    string? ChallengeDifficulty = null);
 
 internal sealed record UpdateAlarmRequestDto(
     string? Title,
     string? Time,
     string? StartDate,
-    IReadOnlyCollection<string>? RecurringDays);
+    IReadOnlyCollection<string>? RecurringDays,
+    string? ChallengeType = null,
+    string? ChallengeDifficulty = null);

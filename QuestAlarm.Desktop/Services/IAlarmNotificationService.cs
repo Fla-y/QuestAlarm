@@ -7,6 +7,8 @@ public interface IAlarmNotificationService
         CancellationToken cancellationToken = default);
 
     Task MarkChallengeRunningAsync(Guid sessionId);
+    Task MarkChallengeActivityAsync(ChallengeActivitySnapshot activity);
     Task MarkChallengeCompletedAsync(Guid sessionId);
     Task MarkChallengeFailedAsync(Guid sessionId);
+    Task MarkChallengeLaunchFailedAsync(Guid sessionId, string errorMessage);
 }

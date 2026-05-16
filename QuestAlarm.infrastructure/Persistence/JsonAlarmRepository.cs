@@ -118,6 +118,8 @@ public sealed class JsonAlarmRepository : IAlarmRepository
             StartDate = alarm.Schedule.StartDate,
             IsRecurring = alarm.Schedule.IsRecurring,
             RecurringDays = [.. alarm.Schedule.RecurringDays],
+            ChallengeType = alarm.ChallengeType.ToString(),
+            ChallengeDifficulty = alarm.ChallengeDifficulty.ToString(),
             IsEnabled = alarm.IsEnabled,
             State = (int)alarm.State,
             CreatedAtUtc = alarm.CreatedAtUtc
@@ -138,6 +140,17 @@ public sealed class JsonAlarmRepository : IAlarmRepository
             schedule,
             fileModel.IsEnabled,
             (AlarmState)fileModel.State,
-            fileModel.CreatedAtUtc);
+            fileModel.CreatedAtUtc,
+            ParseEnumOrDefault(fileModel.ChallengeType, ChallengeType.Typing),
+            ParseEnumOrDefault(fileModel.ChallengeDifficulty, ChallengeDifficulty.Normal));
+    }
+
+    private static TEnum ParseEnumOrDefault<TEnum>(string? value, TEnum fallback)
+        where TEnum : struct
+    {
+        return !string.IsNullOrWhiteSpace(value) &&
+            Enum.TryParse<TEnum>(value, ignoreCase: true, out var parsed)
+                ? parsed
+                : fallback;
     }
 }

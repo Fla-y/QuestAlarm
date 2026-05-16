@@ -188,7 +188,6 @@ public sealed class DesktopRuntimeActivityEndpointTests
                 new AlarmTriggerService(),
                 new AlarmMissedService(),
                 new AlarmSessionService(),
-                new NoOpChallengeClientLauncher(),
                 activityService,
                 notificationService,
                 new DesktopSettingsService(),
@@ -319,6 +318,7 @@ public sealed class DesktopRuntimeActivityEndpointTests
         public Task<ChallengeClientLaunchResult> LaunchAsync(
             AlarmSession session,
             Alarm alarm,
+            string? challengeConfigPath = null,
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(ChallengeClientLaunchResult.NotStarted("Test launcher does not start processes."));
@@ -330,6 +330,7 @@ public sealed class DesktopRuntimeActivityEndpointTests
         public int ChallengeRunningCount { get; private set; }
         public int CompletedCount { get; private set; }
         public int FailedCount { get; private set; }
+        public int LaunchFailedCount { get; private set; }
 
         public Task ShowTriggeredAlarmAsync(
             AlarmNotificationRequest request,
@@ -344,6 +345,11 @@ public sealed class DesktopRuntimeActivityEndpointTests
             return Task.CompletedTask;
         }
 
+        public Task MarkChallengeActivityAsync(ChallengeActivitySnapshot activity)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task MarkChallengeCompletedAsync(Guid sessionId)
         {
             CompletedCount++;
@@ -353,6 +359,12 @@ public sealed class DesktopRuntimeActivityEndpointTests
         public Task MarkChallengeFailedAsync(Guid sessionId)
         {
             FailedCount++;
+            return Task.CompletedTask;
+        }
+
+        public Task MarkChallengeLaunchFailedAsync(Guid sessionId, string errorMessage)
+        {
+            LaunchFailedCount++;
             return Task.CompletedTask;
         }
     }

@@ -34,7 +34,7 @@ public partial class App : System.Windows.Application
         var challengeClientOptions = new ChallengeClientOptions
         {
             ExecutablePath = configuration["ChallengeClient:ExecutablePath"] ?? string.Empty,
-            ArgumentsTemplate = configuration["ChallengeClient:ArgumentsTemplate"] ?? "--session-id {SessionId} --alarm-id {AlarmId} --callback-url {CallbackUrl} --challenge-token {ChallengeToken}",
+            ArgumentsTemplate = configuration["ChallengeClient:ArgumentsTemplate"] ?? "--config \"{ChallengeConfigPath}\" --session-id {SessionId} --alarm-id {AlarmId} --callback-url {CallbackUrl} --challenge-token {ChallengeToken}",
             CallbackUrl = configuration["ChallengeClient:CallbackUrl"] ?? "http://localhost:5055",
             WorkingDirectory = configuration["ChallengeClient:WorkingDirectory"] ?? string.Empty
         };
@@ -55,6 +55,8 @@ public partial class App : System.Windows.Application
         services.AddSingleton<IAlarmSessionService, AlarmSessionService>();
         services.AddSingleton<IAlarmManagementService, AlarmManagementService>();
         services.AddSingleton<IChallengeClientLauncher, ProcessChallengeClientLauncher>();
+        services.AddSingleton<ChallengeConfigService>();
+        services.AddSingleton<ChallengeLaunchService>();
         services.AddSingleton<IChallengeActivityService, ChallengeActivityService>();
         services.AddSingleton<IAlarmNotificationService, WpfAlarmNotificationService>();
         services.AddSingleton<DashboardDataService>();

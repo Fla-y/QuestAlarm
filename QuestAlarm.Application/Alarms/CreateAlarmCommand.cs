@@ -5,4 +5,6 @@ public sealed record CreateAlarmCommand(
     string Time,
     string? StartDate,
     bool IsRecurring,
-    IReadOnlyCollection<string>? RecurringDays);
+    IReadOnlyCollection<string>? RecurringDays,
+    string? ChallengeType = null,
+    string? ChallengeDifficulty = null);

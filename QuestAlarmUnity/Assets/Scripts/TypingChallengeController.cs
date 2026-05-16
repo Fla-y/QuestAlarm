@@ -1,6 +1,10 @@
+using System;
+using System.Collections;
+using System.IO;
 using System.Text;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Networking;
 
 public class TypingChallengeController : MonoBehaviour
 {
@@ -13,7 +17,7 @@ public class TypingChallengeController : MonoBehaviour
     [Header("Phrase")]
     [TextArea(2, 4)]
     [SerializeField] private string targetPhrase = "Today starts now.";
-    [SerializeField] private bool ignoreCase = true;
+    [SerializeField] private ChallengeDifficulty difficulty = ChallengeDifficulty.Normal;
     [SerializeField] private bool blockOnError = true;
 
     [Header("Colors")]
@@ -23,9 +27,16 @@ public class TypingChallengeController : MonoBehaviour
     [SerializeField] private string currentHex = "#e2b714";
 
     private bool _completed;
+    private TypingChallengeSettings _settings;
+    private ChallengeLaunchContext _launchContext;
+    private float _lastActivitySignalTime;
 
     private void Start()
     {
+        _launchContext = ChallengeLaunchContext.FromCommandLine();
+        LoadGameplayConfig(_launchContext.ConfigPath);
+
+        _settings = BuildSettings(difficulty);
         hiddenInputField.SetTextWithoutNotify(string.Empty);
         hiddenInputField.onValueChanged.AddListener(HandleValueChanged);
 
@@ -36,6 +47,8 @@ public class TypingChallengeController : MonoBehaviour
 
         RenderPrompt(string.Empty);
         UpdateStats(string.Empty);
+
+        StartCoroutine(PostSessionCallback("challenge-running"));
     }
 
     private void OnDestroy()
@@ -73,6 +86,7 @@ public class TypingChallengeController : MonoBehaviour
 
         RenderPrompt(value);
         UpdateStats(value);
+        TryPostActivitySignal();
 
         if (IsMatch(value, targetPhrase))
         {
@@ -173,10 +187,9 @@ public class TypingChallengeController : MonoBehaviour
 
         return true;
     }
-
     private bool CharsEqual(char a, char b)
     {
-        if (ignoreCase)
+        if (_settings.IgnoreCase)
         {
             return char.ToLowerInvariant(a) == char.ToLowerInvariant(b);
         }
@@ -191,6 +204,108 @@ public class TypingChallengeController : MonoBehaviour
         hiddenInputField.interactable = false;
 
         Debug.Log("Typing challenge completed.");
+        StartCoroutine(PostSessionCallback("completed", quitAfter: true));
+    }
+
+    private void LoadGameplayConfig(string configPath)
+    {
+        if (string.IsNullOrWhiteSpace(configPath))
+        {
+            Debug.LogWarning("No --config argument was provided. Using inspector challenge settings.");
+            return;
+        }
+
+        if (!File.Exists(configPath))
+        {
+            Debug.LogWarning($"Challenge config file was not found: {configPath}");
+            return;
+        }
+
+        try
+        {
+            string json = File.ReadAllText(configPath);
+            var config = JsonUtility.FromJson<TypingChallengeConfig>(json);
+
+            if (!string.IsNullOrWhiteSpace(config.phrase))
+            {
+                targetPhrase = config.phrase;
+            }
+
+            if (!string.IsNullOrWhiteSpace(config.difficulty) &&
+                Enum.TryParse(config.difficulty, ignoreCase: true, out ChallengeDifficulty parsedDifficulty))
+            {
+                difficulty = parsedDifficulty;
+            }
+
+            Debug.Log($"Loaded challenge config: {configPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"Could not load challenge config '{configPath}': {ex.Message}");
+        }
+    }
+
+    private void TryPostActivitySignal()
+    {
+        if (Time.unscaledTime - _lastActivitySignalTime < 1f)
+        {
+            return;
+        }
+
+        _lastActivitySignalTime = Time.unscaledTime;
+        StartCoroutine(PostSessionCallback("activity"));
+    }
+
+    private IEnumerator PostSessionCallback(string endpoint, bool quitAfter = false)
+    {
+        if (!_launchContext.CanCallCallbacks)
+        {
+            if (quitAfter)
+            {
+                QuitApplication();
+            }
+
+            yield break;
+        }
+
+        string requestUri = $"{_launchContext.CallbackUrl.TrimEnd('/')}/api/sessions/{_launchContext.SessionId}/{endpoint}";
+        byte[] body = Encoding.UTF8.GetBytes("{\"source\":\"QuestAlarmUnity\"}");
+
+        using (var request = new UnityWebRequest(requestUri, UnityWebRequest.kHttpVerbPOST)
+        {
+            uploadHandler = new UploadHandlerRaw(body),
+            downloadHandler = new DownloadHandlerBuffer()
+        })
+        {
+            request.timeout = 5;
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("X-QuestAlarm-Session-Token", _launchContext.ChallengeToken);
+
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log($"Challenge callback accepted: {endpoint}");
+            }
+            else
+            {
+                Debug.LogWarning($"Challenge callback failed: {endpoint} {request.responseCode} {request.error}");
+            }
+        }
+
+        if (quitAfter)
+        {
+            QuitApplication();
+        }
+    }
+
+    private static void QuitApplication()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
     private static string EscapeForTmp(char c)
@@ -202,5 +317,92 @@ public class TypingChallengeController : MonoBehaviour
             '&' => "&amp;",
             _ => c.ToString()
         };
+    }
+    private static TypingChallengeSettings BuildSettings(ChallengeDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            ChallengeDifficulty.Easy => new TypingChallengeSettings
+            {
+                IgnoreCase = true
+            },
+            ChallengeDifficulty.Normal => new TypingChallengeSettings
+            {
+                IgnoreCase = false
+            },
+            ChallengeDifficulty.Hard => new TypingChallengeSettings
+            {
+                IgnoreCase = false
+            },
+            _ => new TypingChallengeSettings
+            {
+                IgnoreCase = false
+            }
+        };
+    }
+
+    [Serializable]
+    private sealed class TypingChallengeConfig
+    {
+        public string phrase;
+        public string difficulty;
+    }
+
+    private readonly struct ChallengeLaunchContext
+    {
+        private ChallengeLaunchContext(
+            string configPath,
+            string sessionId,
+            string callbackUrl,
+            string challengeToken)
+        {
+            ConfigPath = configPath;
+            SessionId = sessionId;
+            CallbackUrl = callbackUrl;
+            ChallengeToken = challengeToken;
+        }
+
+        public string ConfigPath { get; }
+        public string SessionId { get; }
+        public string CallbackUrl { get; }
+        public string ChallengeToken { get; }
+
+        public bool CanCallCallbacks =>
+            !string.IsNullOrWhiteSpace(SessionId) &&
+            !string.IsNullOrWhiteSpace(CallbackUrl) &&
+            !string.IsNullOrWhiteSpace(ChallengeToken);
+
+        public static ChallengeLaunchContext FromCommandLine()
+        {
+            var arguments = Environment.GetCommandLineArgs();
+
+            return new ChallengeLaunchContext(
+                GetArgumentValue(arguments, "config"),
+                GetArgumentValue(arguments, "session-id"),
+                GetArgumentValue(arguments, "callback-url"),
+                GetArgumentValue(arguments, "challenge-token"));
+        }
+
+        private static string GetArgumentValue(string[] arguments, string name)
+        {
+            string flag = $"--{name}";
+
+            for (int index = 0; index < arguments.Length; index++)
+            {
+                if (!string.Equals(arguments[index], flag, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (index + 1 >= arguments.Length || arguments[index + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    return string.Empty;
+                }
+
+                return arguments[index + 1];
+            }
+
+            return string.Empty;
+        }
     }
 }

@@ -41,6 +41,11 @@ public sealed class AlarmManagementService : IAlarmManagementService
             return AlarmMutationResult.Failure(validationError!);
         }
 
+        if (!TryParseChallenge(command.ChallengeType, command.ChallengeDifficulty, out var challengeType, out var challengeDifficulty, out validationError))
+        {
+            return AlarmMutationResult.Failure(validationError!);
+        }
+
         Alarm alarm;
         try
         {
@@ -50,7 +55,9 @@ public sealed class AlarmManagementService : IAlarmManagementService
                 schedule!,
                 isEnabled: true,
                 state: AlarmState.Scheduled,
-                createdAtUtc: _clock.UtcNow);
+                createdAtUtc: _clock.UtcNow,
+                challengeType: challengeType,
+                challengeDifficulty: challengeDifficulty);
         }
         catch (ArgumentException ex)
         {
@@ -193,6 +200,21 @@ public sealed class AlarmManagementService : IAlarmManagementService
             }
         }
 
+        if (command.ChallengeType is not null || command.ChallengeDifficulty is not null)
+        {
+            if (!TryParseChallenge(
+                command.ChallengeType ?? alarm.ChallengeType.ToString(),
+                command.ChallengeDifficulty ?? alarm.ChallengeDifficulty.ToString(),
+                out var challengeType,
+                out var challengeDifficulty,
+                out validationError))
+            {
+                return false;
+            }
+
+            alarm.UpdateChallenge(challengeType, challengeDifficulty);
+        }
+
         var hasScheduleChange =
             command.Time is not null ||
             command.StartDate is not null ||
@@ -330,5 +352,38 @@ public sealed class AlarmManagementService : IAlarmManagementService
         }
 
         return Enum.TryParse(normalized, ignoreCase: true, out dayOfWeek);
+    }
+
+    private static bool TryParseChallenge(
+        string? rawChallengeType,
+        string? rawChallengeDifficulty,
+        out ChallengeType challengeType,
+        out ChallengeDifficulty challengeDifficulty,
+        out string? validationError)
+    {
+        validationError = null;
+
+        if (string.IsNullOrWhiteSpace(rawChallengeType))
+        {
+            challengeType = ChallengeType.Typing;
+        }
+        else if (!Enum.TryParse(rawChallengeType.Trim(), ignoreCase: true, out challengeType))
+        {
+            challengeDifficulty = ChallengeDifficulty.Normal;
+            validationError = "Challenge type is not valid.";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawChallengeDifficulty))
+        {
+            challengeDifficulty = ChallengeDifficulty.Normal;
+        }
+        else if (!Enum.TryParse(rawChallengeDifficulty.Trim(), ignoreCase: true, out challengeDifficulty))
+        {
+            validationError = "Challenge difficulty is not valid.";
+            return false;
+        }
+
+        return true;
     }
 }

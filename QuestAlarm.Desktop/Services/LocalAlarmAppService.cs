@@ -47,7 +47,9 @@ public sealed class LocalAlarmAppService : IAlarmAppService
                 model.Time,
                 model.StartDate,
                 model.IsRecurring,
-                ParseRecurringDayTokens(model.RecurringDaysCsv)),
+                ParseRecurringDayTokens(model.RecurringDaysCsv),
+                model.ChallengeType,
+                model.ChallengeDifficulty),
             cancellationToken);
 
         if (!result.Succeeded)
@@ -77,7 +79,9 @@ public sealed class LocalAlarmAppService : IAlarmAppService
                 model.Title,
                 model.Time,
                 model.IsRecurring ? null : model.StartDate,
-                model.IsRecurring ? ParseRecurringDayTokens(model.RecurringDaysCsv) : null),
+                model.IsRecurring ? ParseRecurringDayTokens(model.RecurringDaysCsv) : null,
+                model.ChallengeType,
+                model.ChallengeDifficulty),
             cancellationToken);
 
         if (!result.Succeeded)
